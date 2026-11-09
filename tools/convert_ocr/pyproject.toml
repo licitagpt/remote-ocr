@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "convert_ocr"
+version = "0.2.1"
+description = "OCR das paginas [OCR:n] dos .md gerados pelo convert_pdf (RapidOCR | pymupdf4llm), com server-mode stdin/stdout para o Workers (.NET)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "convert_pdf>=1.4",          # pacote irmao (tools/convert_pdf): cabecalho/rodape, linhas, markdown, tokens, pymupdf_compat
+    "pymupdf>=2.0",
+    "pymupdf4llm>=2.0",
+    "rapidocr>=3.4",
+    "onnxruntime>=1.17",         # CPU; para GPU troque pelo onnxruntime-gpu / -directml com scripts/setup_gpu.py
+    "numpy>=1.26",
+    "tiktoken>=0.7",
+]
+
+[project.optional-dependencies]
+layout = ["pymupdf-layout>=2.0"]    # motor pymupdf4llm (modelo de layout)
+dev = ["pytest>=8"]
+
+[project.scripts]
+convert_ocr = "convert_ocr.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+convert_ocr = ["review/static/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ocr: roda o OCR de verdade (RapidOCR; baixa o modelo de reconhecimento na 1a vez)",
+    "layout: requer pymupdf.layout instalado (motor pymupdf4llm)",
+    "tesseract: requer dados do Tesseract (TESSDATA_PREFIX)",
+    "corpus: requer o corpus real em <storage>/files/pncp",
+]

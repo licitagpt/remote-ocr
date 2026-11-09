@@ -1,0 +1,29 @@
+# Quebras de linha: o repositório é LF em todas as plataformas. O projeto é editado no Windows e no WSL
+# na mesma pasta (/mnt/c); sem isto um editor Windows grava CRLF e 100+ arquivos aparecem como alterados.
+* text=auto eol=lf
+
+# Sempre LF, mesmo que o git não detecte como texto
+*.sh    text eol=lf
+*.cs    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.csv   text eol=lf
+*.toml  text eol=lf
+*.csproj text eol=lf
+*.slnx  text eol=lf
+*.dez   text eol=lf
+Dockerfile text eol=lf
+
+# Binários: nunca converter
+*.pdf   binary
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.onnx  binary

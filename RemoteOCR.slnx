@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/connect/">
+    <Project Path="src/RemoteOcr.csproj" />
+  </Folder>
+</Solution>

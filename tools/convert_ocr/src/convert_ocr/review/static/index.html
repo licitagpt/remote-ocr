@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>convert_ocr · validação</title>
+<style>
+  :root { --bg:#f5f6f8; --panel:#fff; --line:#d9dde3; --text:#1d2330; --muted:#67717f; --ok:#1f8a4c; --err:#c0392b;
+          --accent:#2457c5; --warn:#b7791f; --chip:#eef1f5; --best:#e3f6ea; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; font:13.5px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--text); background:var(--bg);
+         display:flex; flex-direction:column; overflow:hidden; }
+  header { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0 6px 0 0; font-weight:600; white-space:nowrap; }
+  .modes { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .modes span { padding:4px 12px; cursor:pointer; white-space:nowrap; }
+  .modes span.active { background:var(--accent); color:#fff; }
+  select, input[type=text], input[type=number] { font:inherit; padding:4px 7px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button { font:inherit; padding:5px 11px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; white-space:nowrap; }
+  button:hover { background:#f0f3f7; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { color:var(--err); }
+  button:disabled { opacity:.5; cursor:default; }
+  .muted { color:var(--muted); }
+  .ellipsis { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .spacer { flex:1; }
+  .hidden { display:none !important; }
+  .chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; background:var(--chip); white-space:nowrap; }
+  .chip.text { background:#e3f1ff; color:#174a8a; } .chip.ocr { background:#fff0d6; color:#7a4b00; }
+  .chip.draw { background:#efe6ff; color:#4a2b8a; } .chip.blank { background:#e8e8e8; color:#444; }
+  .chip.ok { background:#e3f6ea; color:#1f8a4c; } .chip.err { background:#fde8e6; color:#c0392b; } .chip.run { background:#fff4d6; color:#8a5a00; }
+  .chip.pending { background:#eee; color:#666; }
+  main { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(360px,5fr) minmax(420px,6fr); gap:10px; padding:10px; }
+  main.stack { grid-template-columns:1fr; grid-template-rows:minmax(180px,42%) minmax(0,1fr); }
+  main.wide { grid-template-columns:minmax(300px,2fr) minmax(480px,5fr); }
+  .col { display:flex; flex-direction:column; min-height:0; gap:8px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; min-height:0; }
+  .panel.grow { flex:1 1 auto; }
+  .panel .bar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:5px 10px; border-bottom:1px solid var(--line); background:#fafbfc; min-width:0; flex-wrap:wrap; }
+  .panel .bar .tab { padding:3px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  .panel .bar .tab.active { background:var(--accent); color:#fff; }
+  .panel .bar .tab.missing { color:var(--muted); }
+  .scroll { flex:1 1 auto; min-height:0; overflow:auto; }
+  #imgwrap { background:#8d8d8d; text-align:center; }
+  #imgwrap img { max-width:100%; background:#fff; display:inline-block; }
+  #imgwrap.fit img { max-width:100%; max-height:100%; width:auto; height:auto; }
+  #imgwrap.zoom img { max-width:none; width:170%; }
+  #mdwrap { padding:8px 12px; }
+  #mdwrap.split { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:0; padding:0; }
+  #mdwrap.split > div { padding:8px 12px; min-width:0; overflow:auto; }
+  #mdwrap.split > div + div { border-left:1px solid var(--line); }
+  pre.raw { white-space:pre-wrap; word-break:break-word; font:12px/1.4 ui-monospace,Consolas,monospace; margin:0; }
+  .md h1,.md h2,.md h3,.md h4 { margin:8px 0 4px; line-height:1.25; }
+  .md h1 { font-size:17px; } .md h2 { font-size:15px; } .md h3 { font-size:14px; } .md h4 { font-size:13.5px; }
+  .md p { margin:5px 0; } .md ul { margin:3px 0 3px 18px; padding:0; }
+  .md table { border-collapse:collapse; margin:6px 0; font-size:12px; }
+  .md th,.md td { border:1px solid var(--line); padding:2px 5px; vertical-align:top; }
+  .md th { background:#eef1f5; }
+  .md blockquote { margin:5px 0; padding:2px 10px; border-left:3px solid var(--line); color:var(--muted); }
+  .md .marker { display:inline-block; padding:6px 14px; border-radius:6px; background:#fff4e0; color:#8a5a00; font-weight:700; font-size:16px; }
+  .md h5, .cols h5 { margin:6px 0 2px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+  .info { flex:0 0 auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12.5px; }
+  .info .err { color:var(--err); white-space:pre-wrap; }
+  footer { flex:0 0 auto; display:flex; gap:8px; align-items:center; min-width:0; }
+  footer .hint { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .progress { padding:40px; text-align:center; color:var(--muted); grid-column:1 / -1; }
+  kbd { font:11px ui-monospace,Consolas,monospace; background:#eee; border:1px solid #ccc; border-radius:3px; padding:0 4px; }
+  #toast { position:fixed; bottom:16px; right:16px; background:#222; color:#fff; padding:8px 14px; border-radius:6px; display:none; z-index:20; max-width:60vw; }
+  #docSel, #loteSel { max-width:38vw; min-width:260px; }
+  /* colunas dos motores (lote) */
+  .cols { flex:1 1 auto; min-height:0; display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); }
+  .cols > .ecol { display:flex; flex-direction:column; min-width:0; min-height:0; }
+  .cols > .ecol + .ecol { border-left:1px solid var(--line); }
+  .ecol .ehead { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:5px 10px; border-bottom:1px solid var(--line); background:#fafbfc; flex-wrap:wrap; font-size:12.5px; }
+  .ecol .ehead b { font-size:13px; }
+  .ecol.best .ehead { background:var(--best); }
+  .ecol .ebody { flex:1 1 auto; min-height:0; overflow:auto; padding:8px 12px; }
+  .verdict { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 10px; border-top:1px solid var(--line); background:#fafbfc; flex-wrap:wrap; }
+  .verdict button.sel { background:var(--ok); color:#fff; border-color:var(--ok); }
+  .verdict input[type=text] { flex:1; min-width:160px; }
+  dialog { border:1px solid var(--line); border-radius:10px; padding:16px 18px; max-width:560px; font:inherit; color:var(--text); }
+  dialog::backdrop { background:rgba(0,0,0,.25); }
+  dialog h2 { margin:0 0 10px; font-size:15px; }
+  dialog .row { display:flex; align-items:center; gap:8px; margin:6px 0; flex-wrap:wrap; }
+  dialog label.chk { display:inline-flex; align-items:center; gap:4px; margin-right:10px; }
+  dialog .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+  table.tally { border-collapse:collapse; font-size:13px; margin:6px 0; }
+  table.tally th, table.tally td { border:1px solid var(--line); padding:3px 8px; text-align:left; }
+  table.tally td.n { text-align:right; }
+  .notes { max-height:40vh; overflow:auto; font-size:12.5px; }
+  .notes div { padding:3px 0; border-bottom:1px dashed var(--line); }
+  @media (max-width: 900px) { main, main.wide { grid-template-columns:1fr; grid-template-rows:1fr 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>convert_ocr · validação</h1>
+  <span class="modes"><span data-mode="docs">Documentos</span><span data-mode="lotes">Lotes</span></span>
+  <!-- modo documentos -->
+  <span id="hdrDocs" style="display:contents">
+    <input type="text" id="q" placeholder="filtrar documentos (pncp, arquivo)" style="width:220px">
+    <label class="muted" style="white-space:nowrap" title="só documentos com resultado gravado em algum motor"><input type="checkbox" id="withResults"> só com resultado</label>
+    <select id="docSel" title="documentos com páginas [OCR:n] ou com resultado gravado"></select>
+    <span id="docCount" class="muted" style="white-space:nowrap"></span>
+    <span class="spacer"></span>
+    <select id="engineSel" title="motor de OCR"></select>
+    <button id="btnRun" class="primary" title="roda o OCR deste documento com o motor escolhido (o .md original não é alterado)">Processar</button>
+    <span id="runInfo" class="muted ellipsis" style="max-width:34vw"></span>
+  </span>
+  <!-- modo lotes -->
+  <span id="hdrLotes" style="display:contents">
+    <select id="loteSel" title="lotes de revisão"></select>
+    <button id="btnNewLote" class="primary" title="sorteia N páginas de OCR entre os documentos com resultado gravado">Novo lote</button>
+    <button id="btnSummary" title="contagem dos vereditos e observações do lote">Resumo</button>
+    <button id="btnDelLote" class="danger" title="apaga o lote (os resultados dos motores ficam)">Excluir</button>
+    <span id="loteInfo" class="muted ellipsis" style="max-width:34vw"></span>
+    <span class="spacer"></span>
+  </span>
+  <button id="btnScan" title="varre o storage e os resultados de novo">Revarrer</button>
+</header>
+
+<main id="main">
+  <div class="progress" id="empty">Carregando…</div>
+</main>
+
+<dialog id="dlgNew">
+  <h2>Novo lote de revisão</h2>
+  <div class="row"><label>Nome <input type="text" id="nName" placeholder="(opcional)" style="width:220px"></label></div>
+  <div class="row"><label>Páginas <input type="number" id="nSize" value="30" min="1" max="2000" style="width:80px"></label>
+    <label>Seed <input type="number" id="nSeed" placeholder="aleatória" style="width:110px"></label></div>
+  <div class="row"><span>Motores</span><span id="nEngines"></span></div>
+  <p class="muted" style="margin:6px 0 0">Sorteia páginas de OCR, uniformemente, entre os documentos que têm resultado gravado em <b>todos</b> os motores marcados (no máximo 3 páginas por documento enquanto houver alternativa). A mesma seed repete o mesmo sorteio.</p>
+  <div class="actions"><button id="nCancel">Cancelar</button><button id="nOk" class="primary">Criar</button></div>
+</dialog>
+
+<dialog id="dlgSummary">
+  <h2 id="sTitle">Resumo</h2>
+  <div id="sBody"></div>
+  <div class="actions"><button id="sClose">Fechar</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const fmtMs = ms => ms == null ? "—" : ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms";
+  const KIND = { text: "texto", ocr: "OCR", draw: "desenho", blank: "em branco" };
+  const pref = (k, d) => { try { const v = localStorage.getItem("ocrreview." + k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem("ocrreview." + k, JSON.stringify(v)); } catch {} };
+
+  const hashMode = { "#docs": "docs", "#lotes": "lotes" }[location.hash];
+  const S = { mode: hashMode || pref("mode", "docs"), state: null, docs: [], doc: null, idx: 0, tab: null, raw: pref("raw", false), onlyOcr: true,
+              imgMode: "fit", pollTimer: null, docTimer: null,
+              lote: null, item: null, litem: 0, onlyPending: false, layout: pref("layout", "side"), autoNext: pref("autoNext", true) };
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  }
+  function toast(msg, ms = 2200) { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = "none", ms); }
+
+  // ------------------------------------------------------------------ markdown minimo (titulos, tabelas, listas, negrito)
+  function inline(s) {
+    s = esc(s);
+    s = s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|\s)_(.+?)_(?=\s|$|[.,;:])/g, "$1<i>$2</i>");
+    return s;
+  }
+  function renderMd(md, emptyMsg) {
+    if (md == null) return `<p class="muted">${esc(emptyMsg || "(sem resultado)")}</p>`;
+    if (!md.trim()) return '<p class="muted">(página sem conteúdo no markdown)</p>';
+    if (md.trim() === "[BLANK]") return '<p><span class="marker">[BLANK]</span></p><p class="muted">Página em branco.</p>';
+    const m = md.trim().match(/^\[(OCR|DRAW):(\d+)\]$/);
+    if (m) return `<p><span class="marker">[${m[1]}:${m[2]}]</span></p><p class="muted">A página saiu do convert_pdf só com o marcador${m[1] === "OCR" ? ": é esta que o convert_ocr substitui" : ""}.</p>`;
+    const lines = md.replace(/\r/g, "").split("\n");
+    const out = [];
+    let i = 0, para = [];
+    const flush = () => { if (para.length) { out.push("<p>" + para.map(inline).join("<br>") + "</p>"); para = []; } };
+    while (i < lines.length) {
+      const ln = lines[i];
+      if (/^\|/.test(ln) && i + 1 < lines.length && /^\|\s*:?-{3,}/.test(lines[i + 1])) {
+        flush();
+        const rows = [];
+        while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+        const cells = r => r.replace(/^\||\|$/g, "").split("|").map(c => inline(c.trim()).replace(/&lt;br&gt;/g, "<br>"));
+        let html = "<table><thead><tr>" + cells(rows[0]).map(c => `<th>${c}</th>`).join("") + "</tr></thead><tbody>";
+        for (let k = 2; k < rows.length; k++) html += "<tr>" + cells(rows[k]).map(c => `<td>${c}</td>`).join("") + "</tr>";
+        out.push(html + "</tbody></table>");
+        continue;
+      }
+      const h = ln.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { flush(); const lvl = Math.min(4, h[1].length); out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`); i++; continue; }
+      if (/^>\s?/.test(ln)) { flush(); out.push(`<blockquote>${inline(ln.replace(/^>\s?/, ""))}</blockquote>`); i++; continue; }
+      if (/^\s*-\s+/.test(ln)) {
+        flush(); let html = "<ul>";
+        while (i < lines.length && /^\s*-\s+/.test(lines[i])) { html += `<li>${inline(lines[i].replace(/^\s*-\s+/, ""))}</li>`; i++; }
+        out.push(html + "</ul>"); continue;
+      }
+      if (!ln.trim()) { flush(); i++; continue; }
+      para.push(ln); i++;
+    }
+    flush();
+    return out.join("\n");
+  }
+  function panel(md, msg, title) {
+    const h = title ? `<h5>${esc(title)}</h5>` : "";
+    return S.raw ? `${h}<pre class="raw">${md == null ? esc(msg) : esc(md)}</pre>` : `${h}<div class="md">${renderMd(md, msg)}</div>`;
+  }
+  const deviceLabel = () => esc(((S.state.device || {}).active || (S.state.device || {}).provider || "cpu").replace("ExecutionProvider", ""));
+  const engLabel = e => S.state && e === S.state.side_engine ? ".ocr.md" : e;
+  const engTitle = e => S.state && e === S.state.side_engine ? "<nome>.ocr.md ao lado do PDF (saída default do convert_ocr local; o arquivo não diz o motor)" : "resultado do motor " + e;
+  const metrics = r => {
+    if (r.no_json) return `${r.pages} págs · <span title="${esc(r.md_path || "")}">só o markdown, sem .json (sem métricas)</span>`;
+    const ms = r.ms || {};
+    return `${r.ocr_done}/${r.ocr_pages} págs · ${fmtMs(ms.total / Math.max(1, r.ocr_done))}/pág · hf −${r.hf_removed} · tab ${r.tables} · tít ${r.headings}` +
+      `${r.empty_pages ? " · <b>" + r.empty_pages + " sem texto</b>" : ""}${r.rotated_pages ? " · " + r.rotated_pages + " giradas" : ""}${r.low_score_pages ? " · " + r.low_score_pages + " baixa conf." : ""}${r.html_pages ? " · <span title=\"páginas em que o pymupdf4llm devolveu HTML e o motor auto usou a montagem do rapidocr\">" + r.html_pages + " html→rapidocr</span>" : ""}`;
+  };
+
+  // ------------------------------------------------------------------ modo
+  function setMode(mode) {
+    S.mode = mode; setPref("mode", mode);
+    if (location.hash !== "#" + mode) history.replaceState(null, "", "#" + mode);
+    document.querySelectorAll(".modes span").forEach(s => s.classList.toggle("active", s.dataset.mode === mode));
+    $("#hdrDocs").classList.toggle("hidden", mode !== "docs");
+    $("#hdrLotes").classList.toggle("hidden", mode !== "lotes");
+    if (!S.state || S.state.scan.status !== "done") return;          // a varredura ainda nao terminou: loadState volta aqui
+    if (mode === "docs") { if (S.doc) renderDoc(); else loadDocs(); }
+    else { renderLoteSel(); if (S.lote) renderItem(); else loadLote($("#loteSel").value); }
+  }
+  document.querySelectorAll(".modes span").forEach(s => s.onclick = () => setMode(s.dataset.mode));
+
+  function showEmpty(html) {
+    $("#main").className = "";
+    $("#main").innerHTML = `<div class="progress">${html}</div>`;
+  }
+
+  // ------------------------------------------------------------------ estado / documentos
+  async function loadState() {
+    S.state = await api("/api/state");
+    const sel = $("#engineSel");
+    if (!sel.options.length) {
+      sel.innerHTML = S.state.run_engines.map(e => `<option value="${e}">${e}${e === "pymupdf4llm" ? " (" + esc(S.state.backend) + ")" : e === "auto" ? " (pymupdf4llm → rapidocr se HTML)" : ""}</option>`).join("");
+      sel.value = S.state.default_engine;
+    }
+    renderRun(S.state.run);
+    renderLoteSel();
+    const sc = S.state.scan;
+    if (sc.status === "running") {
+      $("#docCount").textContent = "varrendo… " + (sc.progress || "");
+      $("#loteInfo").textContent = "varrendo… " + (sc.progress || "");
+      clearTimeout(S.docTimer); S.docTimer = setTimeout(loadState, 1500);
+    } else if (sc.status === "error") {
+      $("#docCount").textContent = "varredura falhou: " + sc.error;
+    }
+    setMode(S.mode);
+  }
+
+  async function loadDocs() {
+    const q = $("#q").value.trim();
+    const d = await api(`/api/docs?q=${encodeURIComponent(q)}&limit=300${$("#withResults").checked ? "&with_results=1" : ""}`);
+    S.docs = d.docs;
+    const sel = $("#docSel");
+    const prev = S.doc ? S.doc.pdf : null;
+    sel.innerHTML = S.docs.map(x => `<option value="${esc(x.rel)}" title="${esc(x.rel)}">${docLabel(x)}</option>`).join("")
+                  || '<option value="">(nenhum documento com páginas de OCR nem resultado gravado)</option>';
+    $("#docCount").textContent = `${S.docs.length}${d.total > S.docs.length ? " de " + d.total : ""} documentos`;
+    if (prev && S.docs.some(x => x.rel === prev)) sel.value = prev;
+    if (sel.value && (!S.doc || S.doc.pdf !== sel.value)) await loadDoc(sel.value);
+    else if (!sel.value) showEmpty("Nenhum documento com páginas <b>[OCR:n]</b> no storage nem resultado gravado em <code>" + esc(S.state.out_dir) + "</code> (ou filtro sem resultado).");
+  }
+  const docLabel = x => {
+    const done = Object.entries(x.results || {}).filter(([, r]) => r.ok).map(([e]) => e[0].toUpperCase()).join("");
+    return `${esc(x.pncp)} · ${esc(x.file)} · OCR ${x.ocr_pages}/${x.pages}${done ? " · ✓" + done : ""}`;
+  };
+
+  async function loadDoc(rel, keepPage = false) {
+    const d = await api(`/api/doc?pdf=${encodeURIComponent(rel)}`);
+    const prevPage = keepPage && S.doc ? S.doc.pages[S.idx].page : null;
+    S.doc = d;
+    S.idx = 0;
+    if (prevPage) { const i = d.pages.findIndex(p => p.page === prevPage); if (i >= 0) S.idx = i; }
+    else S.idx = firstOcr(0);
+    if (!S.tab || (S.tab !== "orig" && S.tab !== "split" && !d.results[S.tab])) {
+      S.tab = d.results[$("#engineSel").value] ? $("#engineSel").value : Object.keys(d.results)[0] || "orig";
+    }
+    if (S.mode === "docs") renderDoc();
+  }
+  const isOcr = p => p.kind === "ocr";
+  const firstOcr = from => { for (let k = 0; k < S.doc.pages.length; k++) { const i = (from + k) % S.doc.pages.length; if (isOcr(S.doc.pages[i])) return i; } return Math.min(from, S.doc.pages.length - 1); };
+  function step(dir) {
+    const n = S.doc.pages.length;
+    let i = S.idx;
+    for (let k = 0; k < n; k++) {
+      i += dir;
+      if (i < 0 || i >= n) return;
+      if (!S.onlyOcr || isOcr(S.doc.pages[i])) { S.idx = i; renderDoc(); return; }
+    }
+  }
+  const docTabs = () => ["orig", ...S.state.engines, "split"];
+
+  // ------------------------------------------------------------------ documento / pagina
+  function renderDoc() {
+    const d = S.doc, p = d.pages[S.idx];
+    const engines = S.state.engines;
+    const tabs = [
+      `<span class="tab ${S.tab === "orig" ? "active" : ""}" data-tab="orig" title="o .md atual do convert_pdf, ao lado do PDF">.md atual</span>`,
+      ...engines.map(e => `<span class="tab ${S.tab === e ? "active" : ""} ${d.results[e] ? "" : "missing"}" data-tab="${e}" title="${d.results[e] ? engTitle(e) : "sem resultado gravado para " + e}">${engLabel(e)}${d.results[e] ? (d.results[e].ok ? "" : " ✗") : " ·"}</span>`),
+      `<span class="tab ${S.tab === "split" ? "active" : ""}" data-tab="split" title="todos os motores lado a lado">lado a lado</span>`,
+    ].join("");
+    const main = $("#main");
+    main.className = "";
+    main.innerHTML = `
+      <div class="col">
+        <div class="panel grow">
+          <div class="bar">
+            <button id="navPrev" ${S.idx === 0 ? "disabled" : ""}>◀</button>
+            <button id="navNext" ${S.idx >= d.pages.length - 1 ? "disabled" : ""}>▶</button>
+            <span style="white-space:nowrap">pág. <b>${p.page}</b>/${d.pages.length}</span>
+            <span class="chip ${p.kind}">${KIND[p.kind] || p.kind}</span>
+            <label class="muted" style="white-space:nowrap"><input type="checkbox" id="onlyOcr" ${S.onlyOcr ? "checked" : ""}> só páginas OCR</label>
+            <span class="muted ellipsis" style="flex:1" title="${esc(d.pdf)}">${esc(d.pncp)} · ${esc(d.file)}</span>
+            <button id="btnFit" title="ajustar">⤢</button>
+            <button id="btnZoom" title="ampliar">🔍</button>
+          </div>
+          <div id="imgwrap" class="scroll ${S.imgMode}"><img id="pageimg" alt="página ${p.page}" src="/api/page.png?pdf=${encodeURIComponent(d.pdf)}&page=${p.page}"></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel grow">
+          <div class="bar">
+            ${tabs}
+            <span class="spacer"></span>
+            <label class="muted" style="white-space:nowrap"><input type="checkbox" id="rawToggle" ${S.raw ? "checked" : ""}> markdown bruto</label>
+          </div>
+          <div id="mdwrap" class="scroll"></div>
+        </div>
+        <div class="info" id="info"></div>
+        <footer>
+          <span class="hint"><kbd>←</kbd> <kbd>→</kbd> navegar · <kbd>1</kbd>..<kbd>${docTabs().length}</kbd> abas · OCR em <b>${deviceLabel()}</b> · o .md original nunca é alterado por esta tela; os resultados ficam em <code>${esc(S.state.out_dir)}</code></span>
+        </footer>
+      </div>`;
+    const setImg = mode => { S.imgMode = mode; $("#imgwrap").className = "scroll " + mode; };
+    $("#btnFit").onclick = () => setImg(S.imgMode === "fit" ? "" : "fit");
+    $("#btnZoom").onclick = () => setImg(S.imgMode === "zoom" ? "fit" : "zoom");
+    $("#navPrev").onclick = () => step(-1);
+    $("#navNext").onclick = () => step(1);
+    $("#onlyOcr").onchange = e => { S.onlyOcr = e.target.checked; };
+    $("#rawToggle").onchange = e => { S.raw = e.target.checked; setPref("raw", S.raw); renderMdPanel(); };
+    document.querySelectorAll(".tab").forEach(t => t.onclick = () => { S.tab = t.dataset.tab; renderDoc(); });
+    renderMdPanel();
+    renderInfo();
+  }
+
+  function bodyFor(engine, page) {
+    const r = S.doc.results[engine];
+    if (!r) return { md: null, msg: `sem resultado gravado para ${engine}` + (S.state.run_engines.includes(engine) ? ": escolha o motor e clique em Processar" : "") };
+    if (!r.ok) return { md: null, msg: `o OCR com ${engine} falhou: ${(r.error || {}).code || ""} ${(r.error || {}).message || ""}` };
+    const b = r.bodies || {};
+    return { md: b[String(page)] ?? b[page] ?? "", msg: "" };
+  }
+  function renderMdPanel() {
+    const p = S.doc.pages[S.idx];
+    const wrap = $("#mdwrap");
+    if (S.tab === "split") {
+      wrap.className = "scroll split";
+      const show = S.state.engines.filter(e => S.doc.results[e]);
+      wrap.innerHTML = (show.length ? show : S.state.engines).map(e => { const b = bodyFor(e, p.page); return `<div>${panel(b.md, b.msg, engLabel(e))}</div>`; }).join("");
+      return;
+    }
+    wrap.className = "scroll";
+    if (S.tab === "orig") { wrap.innerHTML = panel(p.body, p.body == null ? "o .md ao lado do PDF não existe (ou não é saída do convert_pdf)" : "", ""); return; }
+    const b = bodyFor(S.tab, p.page);
+    wrap.innerHTML = panel(b.md, b.msg, "");
+  }
+
+  function renderInfo() {
+    const p = S.doc.pages[S.idx];
+    const parts = [];
+    for (const e of S.state.engines) {
+      const r = S.doc.results[e];
+      if (!r) { parts.push(`<span class="chip">${engLabel(e)}: sem resultado</span>`); continue; }
+      if (!r.ok) { parts.push(`<span class="chip err">${engLabel(e)}: ${esc((r.error || {}).code || "erro")}</span> <span class="err">${esc((r.error || {}).message || "")}</span>`); continue; }
+      parts.push(`<span class="chip ok" title="${esc(engTitle(e))}">${engLabel(e)}</span> ${metrics(r)}${r.no_json ? "" : " · " + fmtMs((r.ms || {}).total) + " · " + esc(r.at || "")}`);
+    }
+    if (!isOcr(p)) parts.push(`<span class="muted">esta página não é de OCR (${KIND[p.kind]}); o convert_ocr não a altera</span>`);
+    if (S.doc.has_markers === false) parts.push(`<span class="muted">o .md ao lado do PDF já não tem marcadores [OCR:n]; as páginas de OCR foram deduzidas da camada de texto do PDF</span>`);
+    $("#info").innerHTML = parts.join("<br>");
+  }
+
+  // ------------------------------------------------------------------ execucao
+  function renderRun(run) {
+    const el = $("#runInfo");
+    clearTimeout(S.pollTimer);
+    if (!run) { el.textContent = ""; $("#btnRun").disabled = false; return; }
+    const name = run.pdf.split("/").pop();
+    if (run.status === "running") {
+      el.innerHTML = `<span class="chip run">processando</span> ${esc(name)} · ${esc(run.engine)} · ${esc(run.progress || "")}`;
+      $("#btnRun").disabled = true;
+      S.pollTimer = setTimeout(pollRun, 1200);
+    } else if (run.status === "error") {
+      el.innerHTML = `<span class="chip err">falhou</span> ${esc(name)} · ${esc(run.engine)} · ${esc(run.error)}`;
+      el.title = run.error;
+      $("#btnRun").disabled = false;
+    } else {
+      const r = run.result || {};
+      el.innerHTML = `<span class="chip ok">pronto</span> ${esc(name)} · ${esc(run.engine)} · ${r.ocr_done}/${r.ocr_pages} páginas em ${fmtMs((r.ms || {}).total)}`;
+      $("#btnRun").disabled = false;
+    }
+  }
+  async function pollRun() {
+    const d = await api("/api/run");
+    const was = S.state.run && S.state.run.status;
+    S.state.run = d.run;
+    renderRun(d.run);
+    if (was === "running" && d.run && d.run.status !== "running") {
+      if (S.doc && S.doc.pdf === d.run.pdf) { S.tab = d.run.status === "done" ? d.run.engine : S.tab; await loadDoc(S.doc.pdf, true); }
+      await loadDocs();
+    }
+  }
+  $("#btnRun").onclick = async () => {
+    if (!S.doc) return;
+    try {
+      const d = await api("/api/run", { method: "POST", body: JSON.stringify({ pdf: S.doc.pdf, engine: $("#engineSel").value }) });
+      S.state.run = d; renderRun(d);
+    } catch (e) { toast("não iniciou: " + e.message, 4000); }
+  };
+  $("#btnScan").onclick = async () => { await api("/api/scan", { method: "POST" }); S.docs = []; S.lote = null; toast("varrendo o storage e os resultados…"); loadState(); };
+  $("#docSel").onchange = e => { if (e.target.value) loadDoc(e.target.value); };
+  let qTimer = null;
+  $("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(loadDocs, 300); };
+  $("#withResults").onchange = () => { setPref("withResults", $("#withResults").checked); loadDocs(); };
+  $("#withResults").checked = pref("withResults", false);
+
+  // ------------------------------------------------------------------ lotes
+  const loteLabel = b => `${esc(b.name)} · ${b.total} págs · ${b.reviewed} revisadas · ${b.engines.map(engLabel).join(" × ")}`;
+  function renderLoteSel() {
+    const sel = $("#loteSel");
+    const lotes = (S.state && S.state.lotes) || [];
+    const prev = S.lote ? String(S.lote.id) : sel.value || pref("lote", "");
+    sel.innerHTML = lotes.map(b => `<option value="${b.id}">${loteLabel(b)}</option>`).join("") || '<option value="">(nenhum lote; crie um)</option>';
+    if (prev && lotes.some(b => String(b.id) === String(prev))) sel.value = prev;
+    $("#btnDelLote").disabled = $("#btnSummary").disabled = !sel.value;
+  }
+  async function loadLote(id, keepItem = false) {
+    if (!id) {
+      S.lote = null;
+      const res = (S.state && S.state.scan.results) || {};
+      const have = Object.entries(res).map(([e, r]) => `<b>${esc(engLabel(e))}</b> (${r.ok} docs ok)`).join(", ");
+      showEmpty(`Nenhum lote de revisão.<br><br>Resultados gravados em <code>${esc((S.state || {}).out_dir || "")}</code>: ${have || "<b>nenhum</b> — rode <code>python -m convert_ocr local &lt;dir&gt; --engine &lt;motor&gt; --out " + esc((S.state || {}).out_dir || "") + "/&lt;motor&gt;</code> para cada motor e clique em Revarrer"}.` +
+                `<br><br><button id="btnNew2" class="primary" ${have ? "" : "disabled"}>Novo lote</button>`);
+      const b = $("#btnNew2"); if (b) b.onclick = openNew;
+      $("#loteInfo").textContent = "";
+      return;
+    }
+    const prev = keepItem && S.item ? S.item.id : null;
+    S.lote = await api(`/api/lotes/${id}`);
+    setPref("lote", String(id));
+    S.litem = 0;
+    if (prev != null) { const i = S.lote.items.findIndex(it => it.id === prev); if (i >= 0) S.litem = i; }
+    else { const i = S.lote.items.findIndex(it => !(it.verdict || {}).best); S.litem = i >= 0 ? i : 0; }
+    await renderItem();
+  }
+  $("#loteSel").onchange = e => loadLote(e.target.value);
+
+  function updateLoteSummary(summary) {
+    if (!S.state) return;
+    const i = S.state.lotes.findIndex(b => b.id === summary.id);
+    if (i >= 0) S.state.lotes[i] = summary; else S.state.lotes.push(summary);
+    if (S.lote && S.lote.id === summary.id) Object.assign(S.lote, { reviewed: summary.reviewed, pending: summary.pending, tally: summary.tally });
+    renderLoteSel();
+  }
+
+  async function renderItem() {
+    if (!S.lote || !S.lote.items.length) { showEmpty("Lote vazio."); return; }
+    const it = S.lote.items[S.litem];
+    let d;
+    try { d = await api(`/api/lotes/${S.lote.id}/items/${it.id}`); }
+    catch (e) { showEmpty("erro: " + esc(e.message)); return; }
+    S.item = d.item;
+    const lote = S.lote, n = lote.items.length, engines = lote.engines;
+    const v = d.item.verdict || {};
+    const sum = d.lote;
+    $("#loteInfo").innerHTML = `${sum.reviewed}/${sum.total} revisadas · ` + engines.map(e => `${esc(engLabel(e))} <b>${sum.tally[e] || 0}</b>`).join(" · ") + ` · empate <b>${sum.tally.empate || 0}</b> · nenhum <b>${sum.tally.nenhum || 0}</b>`;
+    const main = $("#main");
+    main.className = S.layout === "stack" ? "stack" : engines.length >= 3 ? "wide" : "";
+    const cols = engines.map((e, k) => {
+      const r = d.results[e] || {};
+      const best = v.best === e;
+      let head, body;
+      if (!r.ok) {
+        head = `<span class="chip err">${esc((r.error || {}).code || "erro")}</span><span class="err">${esc((r.error || {}).message || "")}</span>`;
+        body = panel(null, `o OCR com ${e} não tem resultado válido para este documento`, "");
+      } else {
+        head = `<span class="muted">${metrics(r)}</span>`;
+        body = panel(r.md ?? "", "", "");
+      }
+      return `<div class="ecol ${best ? "best" : ""}" data-engine="${esc(e)}">
+        <div class="ehead"><b title="${esc(engTitle(e))}">${k + 1}. ${esc(engLabel(e))}</b>${r.backend && r.backend !== e ? ` <span class="chip">${esc(r.backend)}</span>` : ""} ${head}</div>
+        <div class="ebody">${body}</div>
+      </div>`;
+    }).join("");
+    const vbtn = (key, val, label) => `<button class="vb ${v.best === val ? "sel" : ""}" data-best="${esc(val)}" title="tecla ${key}">${label}</button>`;
+    main.innerHTML = `
+      <div class="col">
+        <div class="panel grow">
+          <div class="bar">
+            <button id="navPrev" ${S.litem === 0 ? "disabled" : ""}>◀</button>
+            <button id="navNext" ${S.litem >= n - 1 ? "disabled" : ""}>▶</button>
+            <span style="white-space:nowrap">item <b>${S.litem + 1}</b>/${n}</span>
+            <span class="chip ${v.best ? "ok" : "pending"}">${v.best ? "revisada" : "pendente"}</span>
+            <label class="muted" style="white-space:nowrap" title="◀ ▶ pulam as já revisadas"><input type="checkbox" id="onlyPending" ${S.onlyPending ? "checked" : ""}> só pendentes</label>
+            <span class="muted ellipsis" style="flex:1" title="${esc(it.pdf)}">${esc(it.pncp)} · ${esc(it.file)} · pág. <b>${it.page}</b>/${it.pages} (OCR ${it.ocr_pages})</span>
+            <button id="btnLayout" title="imagem ao lado / em cima">${S.layout === "stack" ? "⇆" : "⇅"}</button>
+            <button id="btnFit" title="ajustar">⤢</button>
+            <button id="btnZoom" title="ampliar">🔍</button>
+          </div>
+          <div id="imgwrap" class="scroll ${S.imgMode}"><img id="pageimg" alt="página ${it.page}" src="/api/page.png?pdf=${encodeURIComponent(it.pdf)}&page=${it.page}"></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel grow">
+          <div class="bar">
+            <span class="muted">lado a lado · ${engines.length} motores</span>
+            ${d.original && d.original.kind !== "ocr" ? `<span class="chip ${d.original.kind}">no .md atual: ${KIND[d.original.kind] || d.original.kind}</span>` : ""}
+            <span class="spacer"></span>
+            <label class="muted" style="white-space:nowrap"><input type="checkbox" id="rawToggle" ${S.raw ? "checked" : ""}> markdown bruto</label>
+          </div>
+          <div class="cols">${cols}</div>
+          <div class="verdict">
+            <span class="muted">melhor:</span>
+            ${engines.map((e, k) => vbtn(k + 1, e, `${k + 1} ${esc(engLabel(e))}`)).join("")}
+            ${vbtn(0, "empate", "0 empate")}${vbtn("x", "nenhum", "x nenhum")}
+            <button id="vClear" ${v.best || v.note ? "" : "disabled"} title="apaga o veredito (tecla c)">limpar</button>
+            <input type="text" id="vNote" placeholder="observação (Enter salva)" value="${esc(v.note || "")}">
+            <label class="muted" style="white-space:nowrap" title="depois de marcar, vai para a próxima pendente"><input type="checkbox" id="autoNext" ${S.autoNext ? "checked" : ""}> avançar</label>
+          </div>
+        </div>
+        <footer>
+          <span class="hint"><kbd>←</kbd> <kbd>→</kbd> itens · <kbd>1</kbd>..<kbd>${engines.length}</kbd> melhor motor · <kbd>0</kbd> empate · <kbd>x</kbd> nenhum · <kbd>c</kbd> limpar · <kbd>n</kbd> observação · lote <b>${esc(lote.name)}</b> seed ${lote.seed} · universo ${lote.universe.docs} docs / ${lote.universe.pages} págs · ${esc(S.state.out_dir)}</span>
+        </footer>
+      </div>`;
+    const setImg = mode => { S.imgMode = mode; $("#imgwrap").className = "scroll " + mode; };
+    $("#btnFit").onclick = () => setImg(S.imgMode === "fit" ? "" : "fit");
+    $("#btnZoom").onclick = () => setImg(S.imgMode === "zoom" ? "fit" : "zoom");
+    $("#btnLayout").onclick = () => { S.layout = S.layout === "stack" ? "side" : "stack"; setPref("layout", S.layout); renderItem(); };
+    $("#navPrev").onclick = () => stepItem(-1);
+    $("#navNext").onclick = () => stepItem(1);
+    $("#onlyPending").onchange = e => { S.onlyPending = e.target.checked; };
+    $("#autoNext").onchange = e => { S.autoNext = e.target.checked; setPref("autoNext", S.autoNext); };
+    $("#rawToggle").onchange = e => { S.raw = e.target.checked; setPref("raw", S.raw); renderItem(); };
+    document.querySelectorAll(".vb").forEach(b => b.onclick = () => setVerdict(b.dataset.best));
+    $("#vClear").onclick = () => setVerdict(null, "");
+    $("#vNote").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); saveNote(); e.target.blur(); } else if (e.key === "Escape") e.target.blur(); };
+    $("#vNote").onchange = saveNote;
+  }
+  function stepItem(dir) {
+    const n = S.lote.items.length;
+    let i = S.litem;
+    for (let k = 0; k < n; k++) {
+      i += dir;
+      if (i < 0 || i >= n) return;
+      if (!S.onlyPending || !(S.lote.items[i].verdict || {}).best) { S.litem = i; renderItem(); return; }
+    }
+  }
+  async function postVerdict(best, note) {
+    const d = await api(`/api/lotes/${S.lote.id}/items/${S.item.id}/verdict`, { method: "POST", body: JSON.stringify({ best, note }) });
+    S.lote.items[S.litem] = d.item;
+    S.item = d.item;
+    updateLoteSummary(d.lote);
+    return d;
+  }
+  async function setVerdict(best, note) {
+    if (!S.item) return;
+    const cur = S.item.verdict || {};
+    try {
+      await postVerdict(best, note !== undefined ? note : ($("#vNote") ? $("#vNote").value : cur.note || ""));
+      if (best && S.autoNext) {
+        const n = S.lote.items.length;
+        for (let i = S.litem + 1; i < n; i++) if (!(S.lote.items[i].verdict || {}).best) { S.litem = i; renderItem(); return; }
+        toast(S.lote.pending ? "fim do lote; ainda há pendentes antes" : "lote completo ✓");
+      }
+      renderItem();
+    } catch (e) { toast("não salvou: " + e.message, 4000); }
+  }
+  async function saveNote() {
+    if (!S.item) return;
+    const note = $("#vNote").value;
+    const cur = S.item.verdict || {};
+    if ((cur.note || "") === note.trim()) return;
+    try { await postVerdict(cur.best || null, note); $("#vClear").disabled = !(cur.best || note.trim()); toast("observação salva", 1200); }
+    catch (e) { toast("não salvou: " + e.message, 4000); }
+  }
+
+  // ------------------------------------------------------------------ novo lote / excluir / resumo
+  function openNew() {
+    const res = (S.state && S.state.scan.results) || {};
+    const engs = Object.keys(res);
+    if (!engs.length) { toast("não há resultados gravados em " + S.state.out_dir, 4000); return; }
+    $("#nEngines").innerHTML = engs.map(e => `<label class="chk" title="${esc(engTitle(e))}"><input type="checkbox" value="${esc(e)}" ${res[e].ok ? "checked" : ""}> ${esc(engLabel(e))} <span class="muted">(${res[e].ok} docs)</span></label>`).join("");
+    $("#nName").value = ""; $("#nSeed").value = "";
+    $("#dlgNew").showModal();
+  }
+  $("#btnNewLote").onclick = openNew;
+  $("#nCancel").onclick = () => $("#dlgNew").close();
+  $("#nOk").onclick = async () => {
+    const engines = [...document.querySelectorAll("#nEngines input:checked")].map(i => i.value);
+    const body = { name: $("#nName").value.trim(), size: +$("#nSize").value || 30, engines };
+    if ($("#nSeed").value) body.seed = +$("#nSeed").value;
+    try {
+      const b = await api("/api/lotes", { method: "POST", body: JSON.stringify(body) });
+      $("#dlgNew").close();
+      updateLoteSummary(b);
+      $("#loteSel").value = String(b.id);
+      toast(`lote "${b.name}": ${b.total} páginas (seed ${b.seed})`);
+      await loadLote(b.id);
+    } catch (e) { toast("não criou: " + e.message, 5000); }
+  };
+  $("#btnDelLote").onclick = async () => {
+    if (!S.lote || !confirm(`Excluir o lote "${S.lote.name}" (${S.lote.items.length} páginas, ${S.lote.reviewed || 0} revisadas)?`)) return;
+    try {
+      await api(`/api/lotes/${S.lote.id}`, { method: "DELETE" });
+      S.state.lotes = S.state.lotes.filter(b => b.id !== S.lote.id);
+      S.lote = null; S.item = null;
+      renderLoteSel();
+      await loadLote($("#loteSel").value);
+    } catch (e) { toast("não excluiu: " + e.message, 4000); }
+  };
+  $("#btnSummary").onclick = async () => {
+    if (!S.lote) return;
+    const d = await api(`/api/lotes/${S.lote.id}`);
+    S.lote = d;
+    const st = d.stats, rev = st.reviewed || 0;
+    const pct = n => rev ? ` (${Math.round(100 * n / rev)}%)` : "";
+    const rows = [...d.engines, ...S.state.verdict_other].map(k => `<tr><td>${esc(engLabel(k))}</td><td class="n">${st.tally[k] || 0}${pct(st.tally[k] || 0)}</td></tr>`).join("");
+    $("#sTitle").textContent = `Lote "${d.name}" · ${rev}/${st.total} revisadas`;
+    $("#sBody").innerHTML = `<div class="muted">seed ${d.seed} · universo ${d.universe.docs} documentos / ${d.universe.pages} páginas de OCR · ${d.created_at} · convert_ocr ${esc(d.version)}</div>
+      <table class="tally"><tr><th>melhor</th><th>páginas</th></tr>${rows}<tr><td class="muted">pendentes</td><td class="n muted">${st.pending}</td></tr></table>
+      ${st.notes.length ? `<h5>Observações</h5><div class="notes">${st.notes.map(x => `<div><b>${esc(x.best || "—")}</b> · ${esc(x.pncp)} · ${esc(x.file)} · pág. ${x.page}: ${esc(x.note)}</div>`).join("")}</div>` : ""}
+      <p class="muted" style="margin:8px 0 0">tudo fica em <code>${esc(S.state.out_dir)}\\lotes.json</code></p>`;
+    $("#dlgSummary").showModal();
+  };
+  $("#sClose").onclick = () => $("#dlgSummary").close();
+
+  // ------------------------------------------------------------------ teclado
+  document.addEventListener("keydown", e => {
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (S.mode === "docs") {
+      if (!S.doc) return;
+      if (e.key === "ArrowLeft") step(-1);
+      else if (e.key === "ArrowRight") step(1);
+      else if (e.key >= "1" && e.key <= "9") { const t = docTabs()[+e.key - 1]; if (t) { S.tab = t; renderDoc(); } }
+      return;
+    }
+    if (!S.lote || !S.item) return;
+    if (e.key === "ArrowLeft") stepItem(-1);
+    else if (e.key === "ArrowRight") stepItem(1);
+    else if (e.key >= "1" && e.key <= "9") { const eng = S.lote.engines[+e.key - 1]; if (eng) setVerdict(eng); }
+    else if (e.key === "0") setVerdict("empate");
+    else if (e.key === "x") setVerdict("nenhum");
+    else if (e.key === "c") setVerdict(null, "");
+    else if (e.key === "n") { e.preventDefault(); const i = $("#vNote"); if (i) i.focus(); }
+    else if (e.key === "r") { S.raw = !S.raw; setPref("raw", S.raw); renderItem(); }
+  });
+
+  loadState().catch(e => showEmpty("erro: " + esc(e.message)));
+})();
+</script>
+</body>
+</html>

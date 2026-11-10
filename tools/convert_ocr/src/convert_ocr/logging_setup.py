@@ -122,13 +122,6 @@ def setup_logging(settings: Settings, file_logging: bool = True) -> list[logging
             root.removeHandler(console)
     for h in handlers:
         root.addHandler(h)
-    # o convert_pdf (cabecalho/rodape, markdown) loga no logger dele: leva junto para os mesmos handlers
-    sibling = logging.getLogger("convert_pdf")
-    if not sibling.handlers:
-        sibling.setLevel(settings.log_level.upper())
-        sibling.propagate = False
-        for h in handlers:
-            sibling.addHandler(h)
     quiet_libraries()
     return handlers
 

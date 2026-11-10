@@ -25,8 +25,8 @@ from statistics import median
 
 import pymupdf
 
-from convert_pdf.core.markdown import page_markdown_with_tables
-from convert_pdf.core.textpage import RE_SECTION, Line, Span, alnum_count
+from convert_ocr.pdf.markdown import page_markdown_with_tables
+from convert_ocr.pdf.textpage import RE_SECTION, Line, Span, alnum_count
 
 CELL_GAP_CHARS = 2.5       # vao entre fragmentos (em larguras de caractere) a partir do qual sao celulas distintas
 ROW_TOL = 0.5              # fracao da altura: desvio maximo do centro vertical para estar na mesma linha visual

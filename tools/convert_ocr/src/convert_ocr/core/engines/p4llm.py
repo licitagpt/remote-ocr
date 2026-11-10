@@ -32,7 +32,7 @@ from convert_ocr.core.boxes import OcrBox
 from convert_ocr.core.engines.base import (OcrEngine, PageOcr, RapidRecognizer, Recognized, page_score, pixmap_from,
                                            recognize_page)
 from convert_ocr.core.metrics import Timer
-from convert_pdf.core.textpage import extract_lines
+from convert_ocr.pdf.textpage import extract_lines
 
 log = logging.getLogger("convert_ocr.engine.pymupdf4llm")
 
@@ -50,9 +50,9 @@ def _ocr_font() -> pymupdf.Font:
 
 def _p4llm():
     """Importa o pymupdf4llm uma vez, em modo layout se o pymupdf.layout estiver instalado (ver
-    convert_pdf.pymupdf_compat: com PyMuPDF 2 o import e bloqueado ate device.activate_layout liberar)."""
+    convert_ocr.pdf.pymupdf_compat: com PyMuPDF 2 o import e bloqueado ate device.activate_layout liberar)."""
     global _layout_warned
-    from convert_pdf.pymupdf_compat import import_pymupdf4llm
+    from convert_ocr.pdf.pymupdf_compat import import_pymupdf4llm
     pymupdf4llm = import_pymupdf4llm()
     if not getattr(pymupdf4llm, "_use_layout", False) and not _layout_warned:
         _layout_warned = True

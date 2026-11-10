@@ -24,10 +24,10 @@ from convert_ocr.core import mdfile
 from convert_ocr.core.boxes import filter_rows, page_markdown
 from convert_ocr.core.engines import PageOcr, get_engine
 from convert_ocr.core.metrics import OcrResult, Timer
-from convert_pdf.core.hf import HFModel, HFParams
-from convert_pdf.core.markdown import lines_to_markdown
-from convert_pdf.core.textpage import Line, body_font_size, extract_lines
-from convert_pdf.core.tokens import count_tokens
+from convert_ocr.pdf.hf import HFModel, HFParams
+from convert_ocr.pdf.markdown import lines_to_markdown
+from convert_ocr.pdf.textpage import Line, body_font_size, extract_lines
+from convert_ocr.pdf.tokens import count_tokens
 
 log = logging.getLogger("convert_ocr.document")
 

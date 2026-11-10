@@ -11,7 +11,7 @@ Para onde vai o resultado é o parâmetro `OUTPUT` / `--output`:
 |---|---|
 | `replace` | substitui o `.md` de entrada (escrita atômica: `.tmp` + rename) |
 | `ocr-md` | grava `<nome>.ocr.md` ao lado e deixa o `.md` intacto |
-| `auto` (default) | `ocr-md` no modo `local`, `replace` no `server` (o Workers quer o `.md` final no lugar) |
+| `auto` (default) | `ocr-md` no modo `local`, `replace` no `server` (o remote-ocr pede `out` explícito) |
 
 `--out DIR` (local) e `"out"` (requisição do server) têm precedência e gravam onde mandarem; a validação `review`
 sempre grava na pasta dela.
@@ -21,10 +21,10 @@ Três motores, escolhidos na linha de comando (`--engine`) ou por requisição n
 | Motor | O que faz | Custo por página (200 dpi, CPU → GPU RTX 3060) |
 |---|---|---|
 | `auto` (default) | O RapidOCR reconhece a página **uma vez**; o `pymupdf4llm` monta o markdown a partir dessas caixas e, **na página em que ele devolver tags HTML** (`<br>` em células de tabela, `<sup>`, `<span>`…), vale a montagem do `rapidocr`, feita das mesmas caixas, sem reconhecer de novo. Sempre com o reconhecedor RapidOCR (`--ocr-backend` é ignorado). As páginas trocadas contam em `html_pages` | ~ o do `pymupdf4llm` |
-| `rapidocr` | PyMuPDF renderiza a página → [RapidOCR](https://github.com/RapidAI/RapidOCR) (PP-OCR, modelo `pt`) reconhece as linhas → montagem **nossa** do markdown (`core/boxes.py` + `convert_pdf.core.markdown`): parágrafos refluídos, listas, títulos (seções numeradas, caixa alta centrada, fonte maior) e tabelas simples (linhas com ≥ 2 células alinhadas) | ~2,2 s → ~0,8 s |
+| `rapidocr` | PyMuPDF renderiza a página → [RapidOCR](https://github.com/RapidAI/RapidOCR) (PP-OCR, modelo `pt`) reconhece as linhas → montagem **nossa** do markdown (`core/boxes.py` + `convert_ocr.pdf.markdown`, copia do `convert_pdf.core.markdown`): parágrafos refluídos, listas, títulos (seções numeradas, caixa alta centrada, fonte maior) e tabelas simples (linhas com ≥ 2 células alinhadas) | ~2,2 s → ~0,8 s |
 | `pymupdf4llm` | PyMuPDF renderiza → um reconhecedor gera a **camada de texto** (`--ocr-backend rapidocr`, default, ou `tesseract`) numa página limpa (imagem + texto invisível) → o [pymupdf4llm](https://github.com/pymupdf/RAG) com o modelo de layout `pymupdf.layout` monta o markdown (títulos, listas e tabelas vêm do modelo) | ~2,6 s → ~1,2 s |
 
-Nos dois casos o cabeçalho/rodapé é o modelo do convert_pdf (`convert_pdf.core.hf`): repetição entre **todas** as páginas do
+Nos dois casos o cabeçalho/rodapé é o modelo do convert_pdf (`convert_ocr.pdf.hf`, cópia de `convert_pdf.core.hf`): repetição entre **todas** as páginas do
 documento, texto nativo das páginas de texto + texto reconhecido das páginas de OCR, com similaridade difusa mais
 tolerante (`--hf-sim 0.80`) porque o OCR erra letras. A primeira ocorrência de cada grupo é mantida, como no convert_pdf.
 
@@ -35,15 +35,14 @@ graus e fica a melhor leitura (`rotated_pages`; `--no-auto-rotate` desliga; só 
 ## Uso
 
 ```bash
-# instalar (venv unico das ferramentas, ver ../README.md; o convert_pdf precisa estar instalado antes)
-pip install -e "tools/convert_pdf[dev,layout]"
+# instalar (venv do remote-ocr; o pacote e autocontido, nao depende do convert_pdf)
 pip install -e "tools/convert_ocr[dev,layout]"        # [layout] = modelo de layout do motor pymupdf4llm
 
 # linha de comando: um .pdf (com o .md ao lado) ou um diretorio inteiro; default grava <nome>.ocr.md ao lado;
 # --output replace substitui o .md; --out DIR grava em outra arvore (testes)
 python -m convert_ocr local <arquivo.pdf | diretorio> [--engine auto|rapidocr|pymupdf4llm] [--output replace|ocr-md] [--out DIR] [--md X.md] [--no-recursive] [--report PREFIXO] [--list LISTA.txt]
 
-# server-mode (usado pelo Workers): uma requisicao NDJSON por linha no stdin, uma resposta por linha no stdout
+# server-mode (usado pelo remote-ocr): uma requisicao NDJSON por linha no stdin, uma resposta por linha no stdout
 python -m convert_ocr server --engine auto --ocr-threads 2
 
 # validacao (ver abaixo)
@@ -56,7 +55,7 @@ exceto `--storage`, obrigatório em todos os modos: a raiz de dados (`C:\app\lic
 `--ocr-device` (`auto` | `cpu` | `cuda` | `dml`, ver [GPU](#gpu)), `--ocr-lang` (modelo de reconhecimento do RapidOCR, `pt`),
 `--ocr-dpi` (200), `--ocr-threads` (threads do onnxruntime deste processo em CPU: com N processos use ~`cpu_count // N`),
 `--timeout` (1800), `--max-ocr-pages` (1000), `--max-rss-mb` (4096: memória residente a partir da qual o server-mode encerra entre
-documentos para ser reiniciado pelo Workers; 0 desliga), `--tessdata`/`--tess-lang` (backend tesseract). O modelo de reconhecimento `pt`
+documentos para ser reiniciado pelo remote-ocr; 0 desliga), `--tessdata`/`--tess-lang` (backend tesseract). O modelo de reconhecimento `pt`
 do RapidOCR é baixado na primeira execução para `site-packages/rapidocr/models/`.
 
 ### GPU
@@ -72,7 +71,7 @@ instalado é a variante com GPU, porque a de CPU (a que vem com `pip install`) n
 | `onnxruntime-directml` | DirectML (qualquer GPU DirectX 12) | só Windows | só o RapidOCR (o `pymupdf.layout` só conhece CUDA) |
 
 Com PyMuPDF 2 o `import pymupdf` ativaria o modelo de layout em CPU antes de o `convert_ocr` escolher o dispositivo;
-o pacote bloqueia esse import no `__init__` (`convert_pdf.pymupdf_compat`) e `device.activate_layout` o libera no
+o pacote bloqueia esse import no `__init__` (`convert_ocr.pdf.pymupdf_compat`) e `device.activate_layout` o libera no
 dispositivo pedido (ver `../README.md`, "PyMuPDF 2"). O extrator de features desse modelo guarda em cache nativo,
 sem limite, dados por tamanho de fonte: a camada de texto invisível usa tamanhos inteiros (`p4llm.font_size`), senão o
 processo cresce ~4 MB por página de OCR; `--max-rss-mb` é a rede de segurança (ver "Protocolo do server-mode").
@@ -95,7 +94,7 @@ reclamar que o `pymupdf-layout` exige `onnxruntime`: é cosmético, o módulo es
 No Linux o `preload_dlls()` não conhece o layout consolidado do CUDA 13 (`site-packages/nvidia/cu13/lib`), e sem essas
 pastas no `LD_LIBRARY_PATH` a sessão CUDA falha e o processo segue em CPU (`note: sessoes do onnxruntime em
 CPUExecutionProvider`). Na linha de comando exporte `LD_LIBRARY_PATH=<venv>/lib/python3.X/site-packages/nvidia/{cu13,cudnn,curand}/lib`;
-sob o Workers não é preciso: ele monta essa variável para o processo filho a partir do `PythonPath` (`ToolProcessPool.BuildStartInfo`).
+sob o remote-ocr não é preciso: ele monta essa variável para o processo filho a partir do python do venv (`OcrProcessPool.BuildStartInfo`).
 
 O que acontece na subida: o processo sonda os providers (`core/device.py`), carrega o RapidOCR já com `use_cuda`/`use_dml`,
 faz uma inferência de aquecimento e lê das sessões o provider **efetivamente** em uso. Se a sessão CUDA falhar
@@ -105,7 +104,7 @@ também vira aviso e CPU (nunca erro). O dispositivo aparece no log (`dispositiv
 da tela de validação. `--ocr-gpu-id` escolhe a placa em máquinas com várias. O backend `tesseract` é sempre CPU
 (Tesseract embutido no PyMuPDF).
 
-Em GPU, `--ocr-threads` pesa pouco; com N processos do Workers numa GPU só, cada processo tem seu contexto CUDA
+Em GPU, `--ocr-threads` pesa pouco; com N processos do remote-ocr numa GPU só, cada processo tem seu contexto CUDA
 (~300-500 MB de VRAM) e os modelos: uma RTX 3060 de 12 GB comporta folgadamente os 4-8 processos típicos.
 
 ### Backend `tesseract` (motor pymupdf4llm)
@@ -184,16 +183,17 @@ Saídas do processo por conta própria: `{"event":"exit","reason":"watchdog"}` +
 trava além de `--timeout` + 30 s (o documento em voo recebe `TIMEOUT`); `{"event":"exit","reason":"memory","retry":true,
 "rss_mb":…,"limit_mb":…}` + código 4 quando, **depois** de responder um documento, a memória residente passou de
 `--max-rss-mb` (`status` informa `rss_mb`). Nesse segundo caso um pedido que já tenha sido escrito fica sem resposta e
-`retry` diz ao Workers que pode reenviá-lo ao processo novo (nenhum documento começou a ser tratado).
+`retry` diz ao remote-ocr que pode reenviá-lo ao processo novo (nenhum documento começou a ser tratado).
 
-Sinais: `SIGTERM`, `SIGINT` (o Ctrl+C no terminal do Workers chega a todo o grupo de processos) e `SIGBREAK` (Windows) pedem o encerramento ordenado: o documento em voo termina e é respondido normalmente, a fila recebe `SHUTDOWN` e o processo sai com código 0. Nunca viram `KeyboardInterrupt` dentro de uma conversão.
+Sinais: `SIGTERM`, `SIGINT` (o Ctrl+C no terminal do remote-ocr chega a todo o grupo de processos) e `SIGBREAK` (Windows) pedem o encerramento ordenado: o documento em voo termina e é respondido normalmente, a fila recebe `SHUTDOWN` e o processo sai com código 0. Nunca viram `KeyboardInterrupt` dentro de uma conversão.
 
-O Workers (.NET) chama este processo pelo worker `convert_ocr`: o `convert_pdf` cria um WorkItem por PDF com páginas
-`[OCR:n]`, e o worker envia `{"cmd":"convert","pdf":…,"md":…,"out":…}` com `out` = o próprio `.md` (substituído no
-lugar, seja qual for o `--output`) e depois atualiza `tokenCount`/`tamanhoMd` do documento no `.json` do edital.
-Configuração em `Workers:convert_ocr` (`Instances`, `PythonPath`, `Args = -m convert_ocr server --engine auto`,
-`WorkingDirectory = ../tools/convert_ocr`, `StartupTimeoutSeconds`, `RequestTimeoutSeconds` > `--timeout` + 30 s do
-watchdog); ver `src/appsettings.example.json` e `.env.example`.
+Quem sobe este processo é o **remote-ocr** (.NET, `src/` deste repositório): ele mantém N processos `convert_ocr server`
+(um por instância anunciada ao Workers), recebe do Workers por WebSocket o PDF e o `.md` do convert_pdf, grava os dois
+numa pasta temporária (`<storage>/tmp/<id>/`), envia `{"cmd":"convert","pdf":…,"md":…,"out":"<nome>.ocr.md"}` a um
+processo livre, lê o `out` e devolve o texto ao Workers (que grava o `.md` no lugar e atualiza `tokenCount`/`tamanhoMd`
+do documento no `.json` do edital). `ping`/`status` alimentam a mensagem `health` do protocolo. Os parâmetros da
+ferramenta vêm das opções do remote-ocr (`--device` → `--ocr-device`, `--engine`, `--args` para o resto); ver o README
+na raiz do repositório.
 
 ## Pastas
 

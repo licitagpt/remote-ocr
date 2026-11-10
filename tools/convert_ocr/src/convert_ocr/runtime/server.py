@@ -36,8 +36,8 @@ from convert_ocr import __version__
 from convert_ocr.config import ENGINES, Settings
 from convert_ocr.logging_setup import fmt_ms, paint, paint_status
 from convert_ocr.runtime.engine import Engine, Task, error_result
-from convert_pdf.runtime.procmem import rss_mb
-from convert_pdf.runtime.stdin_reader import iter_lines
+from convert_ocr.pdf.procmem import rss_mb
+from convert_ocr.pdf.stdin_reader import iter_lines
 
 log = logging.getLogger("convert_ocr.server")
 MAX_LINE = 1 << 20

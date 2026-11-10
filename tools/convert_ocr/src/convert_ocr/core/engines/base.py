@@ -18,7 +18,7 @@ import pymupdf
 from convert_ocr.config import Settings
 from convert_ocr.core.boxes import OcrBox, mean_score, quality, to_boxes, vertical_share
 from convert_ocr.core.metrics import Timer
-from convert_pdf.core.textpage import Line
+from convert_ocr.pdf.textpage import Line
 
 log = logging.getLogger("convert_ocr.engine")
 

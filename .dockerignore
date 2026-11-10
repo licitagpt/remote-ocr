@@ -1,0 +1,21 @@
+# Saidas de build locais: o restore/publish acontece dentro da imagem (sem isso o obj/ do host, que aponta para
+# o cache NuGet da maquina, sobrescreve o restore do container: NETSDK1064).
+**/bin/
+**/obj/
+tests/
+# Ambiente Python local e saidas da ferramenta
+tools/.venv/
+tools/**/__pycache__/
+tools/**/.pytest_cache/
+tools/**/*.egg-info/
+tools/**/out/
+tools/**/reports/
+storage/
+logs/
+# Git e editores
+.git/
+.gitignore
+.gitattributes
+.vscode/
+*.md
+!tools/convert_ocr/README.md

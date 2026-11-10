@@ -208,9 +208,9 @@ def activate_layout(device: Device) -> str:
     modelo com `get_model(use_gpu=True)` (o pymupdf.layout so conhece o CUDAExecutionProvider).
 
     PyMuPDF 2 faria esse import (em CPU) ja no `import pymupdf`; o __init__ do pacote o bloqueia
-    (convert_pdf.pymupdf_compat) e e aqui, no dispositivo escolhido, que o import e liberado.
+    (convert_ocr.pdf.pymupdf_compat) e e aqui, no dispositivo escolhido, que o import e liberado.
     """
-    from convert_pdf.pymupdf_compat import allow_layout
+    from convert_ocr.pdf.pymupdf_compat import allow_layout
     import pymupdf
     if device.layout is not None:
         return device.layout

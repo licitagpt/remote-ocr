@@ -1,5 +1,6 @@
-"""Fixtures: PDFs "escaneados" sinteticos (pagina de texto renderizada e inserida como imagem) e o .md do convert_pdf
-com os marcadores [OCR:n], gerados em runtime (sem binarios no repositorio)."""
+"""Fixtures: PDFs "escaneados" sinteticos (pagina de texto renderizada e inserida como imagem) e o .md no formato do
+convert_pdf com os marcadores [OCR:n], gerados em runtime (sem binarios no repositorio e sem o pacote convert_pdf:
+o .md e montado aqui, no mesmo formato de convert_pdf/core/document.py, etapa 5)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import pymupdf
 import pytest
 
 from convert_ocr.config import Settings
+from convert_ocr.core import mdfile
 
 W, H = 595, 842
 HEADER = "PREFEITURA MUNICIPAL DE TESTE - SECRETARIA DE ADMINISTRACAO"
@@ -92,24 +94,35 @@ def make_blank_scan_pdf(path: Path) -> Path:
     return path
 
 
-def convert_with_convert_pdf(pdf: Path, storage: Path) -> Path:
-    """Gera o .md ao lado do PDF com o convert_pdf real (as paginas-imagem saem como [OCR:n])."""
-    from convert_pdf.config import Settings as PdfSettings
-    from convert_pdf.core.document import convert
-    r = convert(pdf, pdf.with_suffix(".md"), PdfSettings(storage_dir=str(storage), tables="fast", no_color=True,
-                                                          tiktoken_encoding=""))
-    assert r.status in ("partial", "needs_ocr", "ok"), (r.status, r.error_code, r.error_message)
-    return pdf.with_suffix(".md")
+def write_convert_pdf_md(pdf: Path) -> Path:
+    """Gera ao lado do PDF o .md como o convert_pdf o gravaria: blocos `> __Página N de M__` + corpo, as paginas sem
+    texto (imagem) com `[OCR:n]` (n a partir de 1, na ordem) e as demais com o texto nativo da pagina."""
+    doc = pymupdf.open(pdf)
+    total = doc.page_count
+    parts: list[str] = []
+    ocr = 0
+    for pno in range(total):
+        text = mdfile.sanitize_body(doc[pno].get_text("text"))
+        if text:
+            body = text
+        else:
+            ocr += 1
+            body = f"[OCR:{ocr}]"
+        parts.append(f"{mdfile.page_marker(pno, total)}\n\n{body}")
+    doc.close()
+    md = pdf.with_suffix(".md")
+    md.write_text("\n\n".join(parts) + "\n", encoding="utf-8")
+    return md
 
 
 @pytest.fixture
 def storage(tmp_path: Path) -> Path:
-    """Storage sintetico: files/pncp/<ano>/<cnpj>/<seq>/*.pdf + .md do convert_pdf."""
+    """Storage sintetico: files/pncp/<ano>/<cnpj>/<seq>/*.pdf + .md no formato do convert_pdf."""
     root = tmp_path / "files" / "pncp" / "2025" / "12345678000199" / "000001"
     root.mkdir(parents=True)
     for name, maker in (("mixed.pdf", make_mixed_pdf), ("scan.pdf", make_all_scanned_pdf), ("blank.pdf", make_blank_scan_pdf)):
         pdf = maker(root / name)
-        convert_with_convert_pdf(pdf, tmp_path)
+        write_convert_pdf_md(pdf)
     (root / "semmd.pdf").write_bytes((root / "scan.pdf").read_bytes())
     return tmp_path
 

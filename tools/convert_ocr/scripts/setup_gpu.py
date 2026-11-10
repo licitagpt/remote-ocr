@@ -8,7 +8,8 @@
 As tres variantes instalam o MESMO modulo `onnxruntime`, por isso o pip nao resolve a troca sozinho: este script
 desinstala as que houver e instala a pedida. Para o CUDA, le em `onnxruntime.capi.build_and_package_info` a versao
 do CUDA para a qual o onnxruntime-gpu foi compilado e instala os pacotes `nvidia-*` correspondentes (CUDA 13:
-nvidia-cuda-runtime, nvidia-cublas, nvidia-cufft, nvidia-cudnn-cu13; CUDA 12: os mesmos com sufixo -cu12).
+nvidia-cuda-runtime, nvidia-cublas, nvidia-cufft, nvidia-cudnn-cu13 e nvidia-curand-cu12; CUDA 12: os mesmos com sufixo -cu12).
+No fim roda a verificacao (--check): sem GPU na maquina (ex.: build de imagem docker) ela falha, mas a instalacao fica feita.
 O driver NVIDIA precisa suportar essa versao do CUDA (nvidia-smi mostra a maxima suportada).
 """
 
@@ -41,10 +42,11 @@ def installed() -> dict[str, str]:
 def cuda_packages(cuda_version: str) -> list[str]:
     major = int(cuda_version.split(".")[0])
     if major >= 13:
+        # o provider CUDA do onnxruntime-gpu (1.31, CUDA 13) ainda carrega libcurand.so.10, que so o pacote cu12 traz
         return [f"nvidia-cuda-runtime>={major},<{major + 1}", f"nvidia-cublas>={major},<{major + 1}", "nvidia-cufft",
-                f"nvidia-cudnn-cu{major}>=9"]
+                f"nvidia-cudnn-cu{major}>=9", "nvidia-curand-cu12"]
     return [f"nvidia-cuda-runtime-cu{major}", f"nvidia-cublas-cu{major}", f"nvidia-cufft-cu{major}",
-            f"nvidia-cudnn-cu{major}>=9"]
+            f"nvidia-cudnn-cu{major}>=9", f"nvidia-curand-cu{major}"]
 
 
 def check() -> int:

@@ -2,4 +2,7 @@
   <Folder Name="/connect/">
     <Project Path="src/RemoteOcr.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RemoteOcr.Tests.csproj" />
+  </Folder>
 </Solution>

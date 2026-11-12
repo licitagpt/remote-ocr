@@ -17,8 +17,8 @@ done
 
 # ------------------------------------------------------------------ build
 if [ "$BUILD" -eq 1 ]; then
-  echo "==> Build da imagem $IMAGE (source: $SCRIPT_DIR/src)"
-  docker build -t "$IMAGE" "$SCRIPT_DIR/src"
+  echo "==> Build da imagem $IMAGE (contexto: $SCRIPT_DIR)"
+  docker build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR"
   echo "==> Build concluído"
 fi
 

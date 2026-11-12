@@ -133,20 +133,32 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
             case RemoteOcrProtocol.Types.HelloOk:
                 break;
             case RemoteOcrProtocol.Types.Reject:
-                throw new InvalidDataException($"servidor recusou o hello: {(string?)first["code"]} {(string?)first["message"]}");
+            {
+                var code = (string?)first["code"];
+                var msg = (string?)first["message"];
+                if (code == "VERSION")
+                {
+                    logger.LogCritical("servidor recusou este cliente por versão desatualizada: {Message} — atualize o container remote-ocr e reinicie", msg);
+                    Environment.ExitCode = 2;
+                    lifetime.StopApplication();
+                    return; // sem reconexão; StopApplication cancela stoppingToken e encerra o loop
+                }
+                throw new InvalidDataException($"servidor recusou o hello: {code} {msg}");
+            }
             default:
                 throw new InvalidDataException($"esperado hello_ok, veio '{(string?)first["type"]}'");
         }
 
         _connection = connection;
         Connections++;
-        logger.LogInformation("conectado a {Host} como '{Name}': {Free} instância(s) livre(s) anunciada(s) ({Ready} pronta(s)); servidor aceita PDF até {MaxPdf} MB, timeout {Timeout}s, {Total} instância(s) no total",
-            options.Host, options.Name, pool.Free, pool.ReadyCount, (int?)first["max_pdf_mb"], (int?)first["request_timeout_s"], (int?)first["total_instances"]);
+        logger.LogInformation("conectado a {Host} como '{Name}': {Instances} instância(s) anunciada(s) ({InFlight} em voo de sessão anterior, {Ready} prontas); servidor aceita PDF até {MaxPdf} MB, timeout {Timeout}s, {Total} instância(s) no total",
+            options.Host, options.Name, announced, _inFlight.Count, pool.ReadyCount, (int?)first["max_pdf_mb"], (int?)first["request_timeout_s"], (int?)first["total_instances"]);
 
-        // Processos que ficaram livres entre o hello e o hello_ok: pool.Free pode ter mudado.
-        if (pool.Free != announced)
+        // Processos que subiram (ou caíram) entre o hello e o hello_ok; só sincroniza se não há
+        // em-voo: se há, o hello anunciou 0 e HandleConvertAsync.finally enviará a correção.
+        if (_inFlight.IsEmpty && pool.ReadyCount != announced)
         {
-            await connection.TrySendJsonAsync(InstancesMessage(pool.Free, "sincronização"));
+            await connection.TrySendJsonAsync(InstancesMessage(pool.ReadyCount, "sincronização"));
         }
 
         var reason = await ReceiveLoopAsync(connection, stoppingToken);
@@ -162,6 +174,10 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
 
     private JsonObject BuildHello()
     {
+        // Se há docs ainda em voo de uma sessão anterior (Python processos ocupados), anuncia 0
+        // instâncias para que o Workers não despache nada até todos terminarem. Quando o último
+        // terminar, HandleConvertAsync.finally envia instances=ReadyCount para retomar a fila.
+        var instances = _inFlight.IsEmpty ? pool.ReadyCount : 0;
         var ready = pool.AnyReady;
         return new JsonObject
         {
@@ -169,7 +185,7 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
             ["protocol"] = RemoteOcrProtocol.Version,
             ["name"] = options.Name,
             ["version"] = Version,
-            ["instances"] = pool.Free,
+            ["instances"] = instances,
             ["instances_total"] = pool.Instances,
             ["device"] = ready?["device"]?.DeepClone() ?? new JsonObject { ["kind"] = options.Device },
             ["tool_version"] = (string?)ready?["version"],
@@ -201,12 +217,10 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
 
     private void OnReadyCountChanged(int instances, string reason)
     {
-        // instances = ReadyCount (prontos), mas anunciamos pool.Free (livres agora) para o Workers
-        // não despachar mais documentos do que processos Python realmente disponíveis.
-        logger.LogInformation("instâncias: {Free} livres / {Total} prontos ({Reason})", pool.Free, instances, reason);
+        logger.LogInformation("instâncias: {Instances} ({Reason})", instances, reason);
         if (_connection is { } connection)
         {
-            _ = connection.TrySendJsonAsync(InstancesMessage(pool.Free, reason));
+            _ = connection.TrySendJsonAsync(InstancesMessage(instances, reason));
         }
     }
 
@@ -463,6 +477,14 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
             }
 
             _inFlight.TryRemove(inFlight.Id, out _);
+
+            // Quando o último doc em voo termina (típico: reconexão com Python processes ocupados
+            // — o hello anunciou instances=0), avisa o Workers a capacidade real para retomar a fila.
+            if (_inFlight.IsEmpty && connection == _connection && connection.Socket.State == WebSocketState.Open)
+            {
+                _ = connection.TrySendJsonAsync(InstancesMessage(pool.ReadyCount, "todos disponíveis"));
+            }
+
             if (!ConvertRequestHandler.Cleanup(inFlight.Directory))
             {
                 logger.LogDebug("não foi possível apagar {Dir}", inFlight.Directory);

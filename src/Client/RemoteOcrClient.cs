@@ -140,13 +140,13 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
 
         _connection = connection;
         Connections++;
-        logger.LogInformation("conectado a {Host} como '{Name}': {Instances} instância(s) anunciada(s); servidor aceita PDF até {MaxPdf} MB, timeout {Timeout}s, {Total} instância(s) no total",
-            options.Host, options.Name, pool.ReadyCount, (int?)first["max_pdf_mb"], (int?)first["request_timeout_s"], (int?)first["total_instances"]);
+        logger.LogInformation("conectado a {Host} como '{Name}': {Free} instância(s) livre(s) anunciada(s) ({Ready} pronta(s)); servidor aceita PDF até {MaxPdf} MB, timeout {Timeout}s, {Total} instância(s) no total",
+            options.Host, options.Name, pool.Free, pool.ReadyCount, (int?)first["max_pdf_mb"], (int?)first["request_timeout_s"], (int?)first["total_instances"]);
 
-        // Processos que subiram (ou caíram) entre o hello e o hello_ok: o aviso teria se perdido sem conexão.
-        if (pool.ReadyCount != announced)
+        // Processos que ficaram livres entre o hello e o hello_ok: pool.Free pode ter mudado.
+        if (pool.Free != announced)
         {
-            await connection.TrySendJsonAsync(InstancesMessage(pool.ReadyCount, "sincronização"));
+            await connection.TrySendJsonAsync(InstancesMessage(pool.Free, "sincronização"));
         }
 
         var reason = await ReceiveLoopAsync(connection, stoppingToken);
@@ -169,7 +169,7 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
             ["protocol"] = RemoteOcrProtocol.Version,
             ["name"] = options.Name,
             ["version"] = Version,
-            ["instances"] = pool.ReadyCount,
+            ["instances"] = pool.Free,
             ["instances_total"] = pool.Instances,
             ["device"] = ready?["device"]?.DeepClone() ?? new JsonObject { ["kind"] = options.Device },
             ["tool_version"] = (string?)ready?["version"],
@@ -201,10 +201,12 @@ public sealed class RemoteOcrClient(RemoteOcrOptions options, OcrProcessPool poo
 
     private void OnReadyCountChanged(int instances, string reason)
     {
-        logger.LogInformation("instâncias: {Instances} ({Reason})", instances, reason);
+        // instances = ReadyCount (prontos), mas anunciamos pool.Free (livres agora) para o Workers
+        // não despachar mais documentos do que processos Python realmente disponíveis.
+        logger.LogInformation("instâncias: {Free} livres / {Total} prontos ({Reason})", pool.Free, instances, reason);
         if (_connection is { } connection)
         {
-            _ = connection.TrySendJsonAsync(InstancesMessage(instances, reason));
+            _ = connection.TrySendJsonAsync(InstancesMessage(pool.Free, reason));
         }
     }
 

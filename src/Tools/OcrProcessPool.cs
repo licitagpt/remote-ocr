@@ -198,6 +198,9 @@ public sealed class OcrProcessPool
         }
 
         _idle.Writer.TryWrite(process);
+        // Avisa o Workers que um processo voltou a ficar livre; sem isso a fila fica suspensa
+        // indefinidamente após uma reconexão em que o hello anunciou pool.Free (pode ser 0).
+        ReadyCountChanged?.Invoke(ReadyCount, $"{process.Label} disponível");
     }
 
     /// <summary>

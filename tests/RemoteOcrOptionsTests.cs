@@ -45,6 +45,19 @@ public sealed class RemoteOcrOptionsTests
     }
 
     [Fact]
+    public void Gpu_ids_aceita_auto_none_e_lista_e_recusa_lixo()
+    {
+        var a = RemoteOcrOptions.Parse(["--host", "h:1", "--api_key", "k", "--device", "cuda", "--gpu-ids", "0,1,2,3"], NoEnv);
+        Assert.Equal("0,1,2,3", a.GpuIds);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, a.ResolveGpuIds());
+
+        var none = RemoteOcrOptions.Parse(["--host", "h:1", "--api_key", "k", "--device", "cuda", "--gpu-ids", "none"], NoEnv);
+        Assert.Empty(none.ResolveGpuIds());
+
+        Assert.Throws<OptionsException>(() => RemoteOcrOptions.Parse(["--host", "h:1", "--api_key", "k", "--gpu-ids", "0,x"], NoEnv));
+    }
+
+    [Fact]
     public void Aceita_api_key_com_hifen_e_a_forma_chave_igual_valor()
     {
         var a = RemoteOcrOptions.Parse(["--host=h:1", "--api-key=abc", "--instances=3"], NoEnv);

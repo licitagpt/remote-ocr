@@ -122,6 +122,18 @@ public sealed class OcrProcessPoolTests
     }
 
     [Fact]
+    public void Gpus_sao_distribuidas_em_round_robin_e_o_filho_recebe_CUDA_VISIBLE_DEVICES()
+    {
+        var options = TestOptions.Create(TestOptions.TempDirectory(), instances: 5) with { Device = "cuda", GpuIds = "0,1,2" };
+        var pool = new OcrProcessPool(options, NullLogger<OcrProcessPool>.Instance, _ => new FakeChildProcess(autoReady: true));
+
+        Assert.Equal(new int?[] { 0, 1, 2, 0, 1 }, pool.Processes.Select(p => p.Gpu));
+
+        var info = OcrProcessPool.BuildStartInfo(options, 1);
+        Assert.Equal("1", info.Environment["CUDA_VISIBLE_DEVICES"]);
+    }
+
+    [Fact]
     public void Bibliotecas_nvidia_do_venv_entram_no_LD_LIBRARY_PATH()
     {
         var root = TestOptions.TempDirectory();

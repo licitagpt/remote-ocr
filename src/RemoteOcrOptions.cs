@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using RemoteOcr.Protocol;
 
 namespace RemoteOcr;
@@ -25,6 +27,14 @@ public sealed record RemoteOcrOptions
 
     /// <summary>auto | rapidocr | pymupdf4llm → `--engine` da ferramenta.</summary>
     public string Engine { get; init; } = "auto";
+
+    /// <summary>
+    /// GPUs (ordinais CUDA visíveis no container) entre as quais os processos são distribuídos em round-robin: `auto`
+    /// (detecta a quantidade com o nvidia-smi), `none` (sem pinning, todos na GPU 0) ou uma lista como `0,1,2,3`.
+    /// Só vale com <see cref="Device"/> = cuda. Cada processo recebe <c>CUDA_VISIBLE_DEVICES</c> com a sua GPU, então o
+    /// RapidOCR e o modelo de layout do PyMuPDF usam a mesma placa (dentro do processo ela é a device 0).
+    /// </summary>
+    public string GpuIds { get; init; } = "auto";
 
     /// <summary>Executável do Python (venv com o convert_ocr instalado).</summary>
     public required string Python { get; init; }
@@ -57,6 +67,102 @@ public sealed record RemoteOcrOptions
     /// <summary>Pasta dos arquivos temporários de cada pedido.</summary>
     public string TempRoot => Path.Combine(Path.GetFullPath(Storage), "tmp");
 
+    /// <summary>
+    /// GPUs do round-robin (vazia = sem pinning: todos os processos na GPU 0). `auto` pergunta ao nvidia-smi quantas
+    /// GPUs o container enxerga e devolve 0..N-1; uma lista explícita é usada como está.
+    /// </summary>
+    public IReadOnlyList<int> ResolveGpuIds()
+    {
+        if (!string.Equals(Device, "cuda", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var text = (GpuIds ?? "").Trim();
+        if (text.Length == 0 || text == "-" || text.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        if (text.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            var count = DetectGpuCount();
+            return count > 0 ? Enumerable.Range(0, count).ToArray() : [];
+        }
+
+        return ParseGpuIds(text);
+    }
+
+    /// <summary>Valida a sintaxe de --gpu-ids na leitura da configuração (erro de digitação falha na subida).</summary>
+    private static void ValidateGpuIds(string text)
+    {
+        var value = (text ?? "").Trim();
+        if (value.Length == 0 || value == "-" || value.Equals("none", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _ = ParseGpuIds(value);
+    }
+
+    private static List<int> ParseGpuIds(string text)
+    {
+        var ids = new List<int>();
+        foreach (var part in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+            {
+                throw new OptionsException($"--gpu-ids deve ser auto, none ou uma lista de inteiros >= 0 (ex.: 0,1,2,3), recebido '{text}'.");
+            }
+
+            if (!ids.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        if (ids.Count == 0)
+        {
+            throw new OptionsException($"--gpu-ids deve ser auto, none ou uma lista de inteiros >= 0 (ex.: 0,1,2,3), recebido '{text}'.");
+        }
+
+        return ids;
+    }
+
+    /// <summary>Quantidade de GPUs que o nvidia-smi lista neste container (0 se ele não existe ou falha).</summary>
+    private static int DetectGpuCount()
+    {
+        try
+        {
+            var info = new ProcessStartInfo("nvidia-smi", "--query-gpu=index --format=csv,noheader")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = Process.Start(info);
+            if (process is null)
+            {
+                return 0;
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            if (!process.WaitForExit(5000) || process.ExitCode != 0)
+            {
+                return 0;
+            }
+
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Count(line => int.TryParse(line.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out _));
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
     public static readonly string Usage = """
         remote-ocr: cliente de OCR do licitagpt. Conecta ao Workers por WebSocket, sobe N processos convert_ocr e atende
         os documentos que o Workers mandar.
@@ -68,6 +174,7 @@ public sealed record RemoteOcrOptions
           --instances N                                 processos Python (padrão 1)                  REMOTEOCR_INSTANCES
           --device auto|cpu|cuda|dml                    --ocr-device da ferramenta (padrão auto)     REMOTEOCR_DEVICE
           --engine auto|rapidocr|pymupdf4llm            --engine da ferramenta (padrão auto)         REMOTEOCR_ENGINE
+          --gpu-ids auto|none|0,1,2,3                   GPUs em round-robin por processo (padrão auto) REMOTEOCR_GPU_IDS
           --python CAMINHO                              python do venv (padrão ../tools/.venv)       REMOTEOCR_PYTHON
           --tool-dir PASTA                              tools/convert_ocr (padrão ../tools/convert_ocr) REMOTEOCR_TOOL_DIR
           --storage PASTA                               logs e temporários (padrão ../storage)       REMOTEOCR_STORAGE
@@ -107,6 +214,9 @@ public sealed record RemoteOcrOptions
             throw new OptionsException($"--engine deve ser auto|rapidocr|pymupdf4llm, recebido '{engine}'.");
         }
 
+        var gpuIds = Get("gpu-ids", "GPU_IDS") ?? Get("gpu_ids", "GPU_IDS") ?? "auto";
+        ValidateGpuIds(gpuIds);
+
         var cwd = currentDirectory ?? Directory.GetCurrentDirectory();
         return new RemoteOcrOptions
         {
@@ -115,6 +225,7 @@ public sealed record RemoteOcrOptions
             Instances = PositiveInt(Get("instances", "INSTANCES"), "--instances", 1),
             Device = device,
             Engine = engine,
+            GpuIds = gpuIds,
             Python = Get("python", "PYTHON") ?? DefaultPython(cwd),
             ToolDir = Get("tool-dir", "TOOL_DIR") ?? Get("tool_dir", "TOOL_DIR") ?? Path.Combine("..", "tools", "convert_ocr"),
             Storage = Get("storage", "STORAGE") ?? Path.Combine("..", "storage"),

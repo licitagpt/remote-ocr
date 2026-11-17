@@ -21,7 +21,7 @@ public sealed record OcrProcessOptions(string CommandLine, int StartupTimeoutSec
 /// fica sem resposta e é reenviado uma vez ao processo novo (RECYCLE). Se o processo morre com um documento em voo,
 /// o documento falha com CRASH e não é reenviado.
 /// </summary>
-public sealed class OcrServerProcess(Func<IChildProcess> processFactory, OcrProcessOptions options, ILogger logger, int index)
+public sealed class OcrServerProcess(Func<IChildProcess> processFactory, OcrProcessOptions options, ILogger logger, int index, int? gpu = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -36,6 +36,9 @@ public sealed class OcrServerProcess(Func<IChildProcess> processFactory, OcrProc
     private volatile bool _busy;
 
     public int Index { get; } = index;
+
+    /// <summary>GPU física (CUDA_VISIBLE_DEVICES) deste processo; null = sem pinning.</summary>
+    public int? Gpu { get; } = gpu;
 
     public string Label { get; } = $"convert_ocr#{index + 1}";
 
@@ -294,7 +297,7 @@ public sealed class OcrServerProcess(Func<IChildProcess> processFactory, OcrProc
         {
             var ready = await _ready.Task.WaitAsync(timeout.Token);
             Ready = ready;
-            logger.LogInformation("{Label}: convert_ocr {Version} pronto (pid {Pid}): {Details}", Label, (string?)ready["version"], (int?)ready["pid"], ReadyDetails(ready));
+            logger.LogInformation("{Label}: convert_ocr {Version} pronto (pid {Pid}{Gpu}): {Details}", Label, (string?)ready["version"], (int?)ready["pid"], Gpu is null ? "" : $", gpu {Gpu}", ReadyDetails(ready));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

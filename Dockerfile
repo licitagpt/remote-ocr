@@ -4,12 +4,14 @@
 #   docker build -t licitagpt/remote-ocr --build-arg DEVICE=cpu . # só CPU (imagem menor)
 #   docker run -d --name remote-ocr --gpus all --restart unless-stopped --stop-timeout 120 \
 #     -e REMOTEOCR_HOST=186.216.247.55:28747 -e REMOTEOCR_API_KEY=MINHA_SENHA_SECRETA \
-#     -e REMOTEOCR_INSTANCES=4 -e REMOTEOCR_DEVICE=cuda \
+#     -e REMOTEOCR_INSTANCES=16 -e REMOTEOCR_DEVICE=cuda -e REMOTEOCR_GPU_IDS=auto \
 #     -v remote-ocr-data:/data licitagpt/remote-ocr
 #
 # A GPU entra pelo NVIDIA Container Toolkit (--gpus all), que injeta o driver (libcuda.so.1); o runtime CUDA, cuBLAS e
 # cuDNN vêm dos pacotes pip nvidia-* instalados no venv (scripts/setup_gpu.py --cuda), e o .NET os põe no LD_LIBRARY_PATH
-# dos processos Python. --stop-timeout dá tempo de o cliente terminar os documentos em voo (REMOTEOCR_SHUTDOWN_GRACE).
+# dos processos Python. REMOTEOCR_GPU_IDS distribui os N processos em round-robin pelas GPUs visíveis (cada processo
+# recebe CUDA_VISIBLE_DEVICES com a sua placa). --stop-timeout dá tempo de o cliente terminar os documentos em voo
+# (REMOTEOCR_SHUTDOWN_GRACE).
 
 # ---------- build (.NET) ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -49,6 +51,7 @@ ENV REMOTEOCR_PYTHON=/opt/venv/bin/python \
     REMOTEOCR_STORAGE=/data \
     REMOTEOCR_INSTANCES=4 \
     REMOTEOCR_DEVICE=${DEVICE} \
+    REMOTEOCR_GPU_IDS=auto \
     REMOTEOCR_ENGINE=auto \
     REMOTEOCR_SHUTDOWN_GRACE=90
 

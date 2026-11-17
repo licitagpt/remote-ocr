@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ public sealed class OcrProcessPool
 {
     private readonly RemoteOcrOptions _options;
     private readonly ILogger _logger;
+    private readonly IReadOnlyList<int> _gpuIds;
     private readonly List<OcrServerProcess> _all = [];
     private readonly Channel<OcrServerProcess> _idle = Channel.CreateUnbounded<OcrServerProcess>();
     private readonly object _lock = new();
@@ -32,14 +34,16 @@ public sealed class OcrProcessPool
         _options = options;
         _logger = logger;
         RetryDownInterval = retryDownInterval ?? TimeSpan.FromMinutes(5);
+        _gpuIds = options.ResolveGpuIds();
         var processOptions = new OcrProcessOptions($"{options.Python} {options.PythonArguments}", options.StartupTimeoutSeconds, options.RequestTimeoutSeconds);
         for (var i = 0; i < Math.Max(1, options.Instances); i++)
         {
             var index = i;
+            var gpu = _gpuIds.Count == 0 ? (int?)null : _gpuIds[index % _gpuIds.Count];
             Func<IChildProcess> factory = processFactory is null
-                ? () => new SystemChildProcess(BuildStartInfo(options))
+                ? () => new SystemChildProcess(BuildStartInfo(options, gpu))
                 : () => processFactory(index);
-            _all.Add(new OcrServerProcess(factory, processOptions, logger, index));
+            _all.Add(new OcrServerProcess(factory, processOptions, logger, index, gpu));
         }
     }
 
@@ -88,6 +92,11 @@ public sealed class OcrProcessPool
         _started = true;
         _logger.LogInformation("subindo {Instances} processo(s) '{Python} {Args}' em '{Dir}' (até {Timeout}s cada)",
             _all.Count, _options.Python, _options.PythonArguments, _options.ToolDir, _options.StartupTimeoutSeconds);
+        if (_gpuIds.Count > 0)
+        {
+            _logger.LogInformation("{Instances} processo(s) em round-robin por {Gpus} GPU(s): {Map}",
+                _all.Count, _gpuIds.Count, string.Join(", ", _all.Select(p => $"{p.Label}→gpu{p.Gpu}")));
+        }
         if (!OperatingSystem.IsWindows())
         {
             var nvidia = NvidiaLibraryDirectories(_options.Python);
@@ -260,9 +269,11 @@ public sealed class OcrProcessPool
     /// Monta o processo: python + `-m convert_ocr server --storage ... --engine ... --ocr-device ...` na pasta da
     /// ferramenta. Um python relativo com separador ("../tools/.venv/bin/python") é resolvido contra a pasta atual.
     /// No Linux as bibliotecas CUDA/cuDNN dos pacotes pip nvidia-* do venv entram no LD_LIBRARY_PATH do filho (fora
-    /// do caminho padrão do loader; sem elas a sessão CUDA falha e o OCR cai para CPU).
+    /// do caminho padrão do loader; sem elas a sessão CUDA falha e o OCR cai para CPU). Com <paramref name="gpu"/> o
+    /// filho recebe CUDA_VISIBLE_DEVICES com a sua placa (device 0 dentro dele), o que vale para o RapidOCR e para o
+    /// modelo de layout do PyMuPDF.
     /// </summary>
-    public static ProcessStartInfo BuildStartInfo(RemoteOcrOptions options)
+    public static ProcessStartInfo BuildStartInfo(RemoteOcrOptions options, int? gpu = null)
     {
         var python = options.Python;
         if (!Path.IsPathRooted(python) && (python.Contains(Path.DirectorySeparatorChar) || python.Contains(Path.AltDirectorySeparatorChar)))
@@ -279,6 +290,10 @@ public sealed class OcrProcessPool
         info.Environment["PYTHONIOENCODING"] = "utf-8";
         info.Environment["PYTHONUNBUFFERED"] = "1";
         info.Environment["NO_COLOR"] = "1";
+        if (gpu is not null)
+        {
+            info.Environment["CUDA_VISIBLE_DEVICES"] = gpu.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
         if (!OperatingSystem.IsWindows())
         {

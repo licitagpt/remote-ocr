@@ -50,6 +50,7 @@ Linha de comando com fallback em variáveis de ambiente (`REMOTEOCR_*`); no dock
 | `--instances` | `REMOTEOCR_INSTANCES` | 1 | processos Python = instâncias anunciadas (~300–500 MB de VRAM cada; uma RTX 3060 12 GB aguenta 4–8) |
 | `--device` | `REMOTEOCR_DEVICE` | `auto` | `auto` \| `cpu` \| `cuda` \| `dml` → `--ocr-device` da ferramenta |
 | `--engine` | `REMOTEOCR_ENGINE` | `auto` | `auto` \| `rapidocr` \| `pymupdf4llm` |
+| `--gpu-ids` | `REMOTEOCR_GPU_IDS` | `auto` | GPUs físicas em round-robin entre os processos: `auto` (detecta com `nvidia-smi`), `none` (todos na GPU 0) ou `0,1,2,3`. Cada processo recebe `CUDA_VISIBLE_DEVICES` com a sua placa, então o RapidOCR e o modelo de layout do PyMuPDF usam a mesma GPU. Só vale com `--device cuda`. |
 | `--python` | `REMOTEOCR_PYTHON` | `../tools/.venv/bin/python` se existir, senão `python` | interpretador com o convert_ocr instalado |
 | `--tool-dir` | `REMOTEOCR_TOOL_DIR` | `../tools/convert_ocr` | pasta de trabalho dos processos |
 | `--storage` | `REMOTEOCR_STORAGE` | `../storage` | logs da ferramenta (`logs/`) e temporários (`tmp/<id>/`) |
@@ -70,13 +71,38 @@ docker build -t licitagpt/remote-ocr --build-arg DEVICE=cpu .  # só CPU
 docker run -d --name remote-ocr --gpus all --restart unless-stopped --stop-timeout 120 \
   -e REMOTEOCR_HOST=186.216.247.55:28747 \
   -e REMOTEOCR_API_KEY=MINHA_SENHA_SECRETA \
-  -e REMOTEOCR_INSTANCES=4 \
+  -e REMOTEOCR_INSTANCES=16 \
   -e REMOTEOCR_DEVICE=cuda \
+  -e REMOTEOCR_GPU_IDS=auto \
   -v remote-ocr-data:/data \
   licitagpt/remote-ocr
 
-docker logs -f remote-ocr      # "convert_ocr#1: convert_ocr 0.3.0 pronto (pid 17): ... device.active=CUDAExecutionProvider"
-                               # "conectado a ws://186.216.247.55:28747/ws/remote-ocr como 'gpu-01': 4 instância(s) anunciada(s)"
+docker logs -f remote-ocr      # "convert_ocr#1: convert_ocr 0.3.0 pronto (pid 17, gpu 0): ... device.active=CUDAExecutionProvider"
+                               # "16 processo(s) em round-robin por 4 GPU(s): convert_ocr#1→gpu0, ... #16→gpu3"
+                               # "conectado a ws://.../ws/remote-ocr como 'gpu-01': 16 instância(s) anunciada(s)"
+```
+
+Várias GPUs: `REMOTEOCR_GPU_IDS=auto` distribui os N processos em round-robin pelas GPUs que o container enxerga
+(com 16 instâncias e 4 GPUs, 4 por placa). Cada processo Python recebe `CUDA_VISIBLE_DEVICES` com a sua GPU — dentro
+dele ela é a device 0, o que vale para o RapidOCR e para o modelo de layout. Dá para fixar a distribuição com
+`-e REMOTEOCR_GPU_IDS=0,1,2,3` e conferir por placa:
+
+```bash
+docker exec remote-ocr nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory --format=csv
+nvidia-smi --query-gpu=index,memory.used --format=csv   # no host: as 4 placas com memória em uso
+```
+
+Se preferir um container por GPU (4 clientes de 4 instâncias em vez de 1 de 16), use `--gpus '"device=N"'` e
+`REMOTEOCR_GPU_IDS=none` em cada um (cada container já enxerga só a sua placa):
+
+```bash
+for gpu in 0 1 2 3; do
+  docker run -d --name "remote-ocr-$gpu" --gpus "device=$gpu" --restart unless-stopped --stop-timeout 120 \
+    -e REMOTEOCR_HOST=186.216.247.55:28747 -e REMOTEOCR_API_KEY=MINHA_SENHA_SECRETA \
+    -e REMOTEOCR_INSTANCES=4 -e REMOTEOCR_DEVICE=cuda -e REMOTEOCR_GPU_IDS=none \
+    -e REMOTEOCR_NAME="gpu-$(printf '%02d' "$gpu")" \
+    -v "remote-ocr-data-$gpu:/data" licitagpt/remote-ocr
+done
 ```
 
 GPU: só o driver NVIDIA e o [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)

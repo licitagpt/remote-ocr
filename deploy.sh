@@ -16,6 +16,8 @@
 #
 # Opções opcionais:
 #   --engine <engine>       Motor OCR             (padrão: auto)
+#   --gpu-ids <spec>        GPUs em round-robin   (padrão: auto; none = todos na GPU 0; ex: 0,1,2,3)
+#   --gpus <spec>           Spec do docker --gpus (padrão: all; ex: '"device=0"' para 1 container por GPU)
 #   --storage <caminho>     Pasta de armazenamento (padrão: /data)
 #   --shutdown-grace <s>    Segundos de graceful shutdown (padrão: 90)
 #   --name <nome>           Nome do container     (padrão: remote-ocr)
@@ -32,6 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_NAME="remote-ocr"
 IMAGE="licitagpt/remote-ocr"
 BUILD=1
+DOCKER_GPUS="all"
 
 # parâmetros que podem vir do container existente ou da linha de comando
 OPT_HOST=""
@@ -39,6 +42,7 @@ OPT_API_KEY=""
 OPT_INSTANCES=""
 OPT_DEVICE=""
 OPT_ENGINE=""
+OPT_GPU_IDS=""
 OPT_STORAGE=""
 OPT_SHUTDOWN_GRACE=""
 EXTRA_ENVS=()   # --e KEY=VALUE extras vindos da linha de comando
@@ -61,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     --instances)      OPT_INSTANCES="$2"; shift 2 ;;
     --device)         OPT_DEVICE="$2"; shift 2 ;;
     --engine)         OPT_ENGINE="$2"; shift 2 ;;
+    --gpu-ids)        OPT_GPU_IDS="$2"; shift 2 ;;
+    --gpus)           DOCKER_GPUS="$2"; shift 2 ;;
     --storage)        OPT_STORAGE="$2"; shift 2 ;;
     --shutdown-grace) OPT_SHUTDOWN_GRACE="$2"; shift 2 ;;
     --volume|-v)      EXTRA_VOLS+=("$2"); shift 2 ;;
@@ -85,12 +91,16 @@ if docker inspect "$CONTAINER_NAME" &>/dev/null; then
 
   # lê todas as envs do container em execução
   while IFS= read -r line; do
-    CONTAINER_ENVS+=("$line")
+    if [ -n "$line" ]; then
+      CONTAINER_ENVS+=("$line")
+    fi
   done < <(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER_NAME")
 
   # lê volumes/binds do container
   while IFS= read -r line; do
-    [ -n "$line" ] && CONTAINER_VOLS+=("$line")
+    if [ -n "$line" ]; then
+      CONTAINER_VOLS+=("$line")
+    fi
   done < <(docker inspect --format '{{range .HostConfig.Binds}}{{println .}}{{end}}' "$CONTAINER_NAME")
 else
   # container não existe: valida obrigatórios
@@ -110,12 +120,13 @@ else
     "REMOTEOCR_API_KEY=$OPT_API_KEY"
     "REMOTEOCR_INSTANCES=$OPT_INSTANCES"
     "REMOTEOCR_DEVICE=$OPT_DEVICE"
+    "REMOTEOCR_GPU_IDS=${OPT_GPU_IDS:-auto}"
     "REMOTEOCR_ENGINE=${OPT_ENGINE:-auto}"
     "REMOTEOCR_STORAGE=${OPT_STORAGE:-/data}"
     "REMOTEOCR_SHUTDOWN_GRACE=${OPT_SHUTDOWN_GRACE:-90}"
     "TZ=America/Sao_Paulo"
   )
-  CONTAINER_VOLS+=("/docker/docker-data/volumes/remote-ocr-data/_data:/data:z")
+  CONTAINER_VOLS+=("remote-ocr-data:/data")
 fi
 
 # sobrescreve com quaisquer opcionais passados explicitamente na linha de comando
@@ -129,16 +140,19 @@ _override_env() {
       break
     fi
   done
-  [ "$found" -eq 0 ] && CONTAINER_ENVS+=("${key}=${val}")
+  if [ "$found" -eq 0 ]; then
+    CONTAINER_ENVS+=("${key}=${val}")
+  fi
 }
 
-[ -n "$OPT_HOST" ]           && _override_env REMOTEOCR_HOST           "$OPT_HOST"
-[ -n "$OPT_API_KEY" ]        && _override_env REMOTEOCR_API_KEY        "$OPT_API_KEY"
-[ -n "$OPT_INSTANCES" ]      && _override_env REMOTEOCR_INSTANCES      "$OPT_INSTANCES"
-[ -n "$OPT_DEVICE" ]         && _override_env REMOTEOCR_DEVICE         "$OPT_DEVICE"
-[ -n "$OPT_ENGINE" ]         && _override_env REMOTEOCR_ENGINE         "$OPT_ENGINE"
-[ -n "$OPT_STORAGE" ]        && _override_env REMOTEOCR_STORAGE        "$OPT_STORAGE"
-[ -n "$OPT_SHUTDOWN_GRACE" ] && _override_env REMOTEOCR_SHUTDOWN_GRACE "$OPT_SHUTDOWN_GRACE"
+[ -n "$OPT_HOST" ]           && _override_env REMOTEOCR_HOST           "$OPT_HOST" || true
+[ -n "$OPT_API_KEY" ]        && _override_env REMOTEOCR_API_KEY        "$OPT_API_KEY" || true
+[ -n "$OPT_INSTANCES" ]      && _override_env REMOTEOCR_INSTANCES      "$OPT_INSTANCES" || true
+[ -n "$OPT_DEVICE" ]         && _override_env REMOTEOCR_DEVICE         "$OPT_DEVICE" || true
+[ -n "$OPT_ENGINE" ]         && _override_env REMOTEOCR_ENGINE         "$OPT_ENGINE" || true
+[ -n "$OPT_GPU_IDS" ]        && _override_env REMOTEOCR_GPU_IDS        "$OPT_GPU_IDS" || true
+[ -n "$OPT_STORAGE" ]        && _override_env REMOTEOCR_STORAGE        "$OPT_STORAGE" || true
+[ -n "$OPT_SHUTDOWN_GRACE" ] && _override_env REMOTEOCR_SHUTDOWN_GRACE "$OPT_SHUTDOWN_GRACE" || true
 
 # adiciona envs extras passados via --env
 for e in "${EXTRA_ENVS[@]}"; do
@@ -158,7 +172,8 @@ RUN_ARGS=(
   -d
   --name "$CONTAINER_NAME"
   --restart unless-stopped
-  --gpus all
+  --stop-timeout 120
+  --gpus "$DOCKER_GPUS"
 )
 
 for vol in "${CONTAINER_VOLS[@]}" "${EXTRA_VOLS[@]}"; do
@@ -177,3 +192,5 @@ echo ""
 echo "Container '$CONTAINER_NAME' recriado com a imagem '$IMAGE'."
 echo "Acompanhe os logs:"
 echo "  docker logs -f $CONTAINER_NAME"
+echo "Confira o uso das GPUs:"
+echo "  docker exec $CONTAINER_NAME nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory --format=csv"
